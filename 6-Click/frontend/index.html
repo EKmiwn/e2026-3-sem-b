@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fotohuset Click – Bestil print</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #e4572e; --brand-dark: #b23c18; --brand-soft: #fdebe4; }</style>
+  <style>
+    /* Kundefladen: mindst 16 px skrift (§11) */
+    #tab-order, #tab-order label, #tab-order th, #tab-order td, #tab-order button, #tab-mine label { font-size: 16px; }
+    .wizard { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .wizard span { padding: 6px 12px; border-radius: 999px; background: #eceeed; color: var(--muted); font-weight: 600; }
+    .wizard span.active { background: var(--brand); color: #fff; }
+    .wizard span.done { background: var(--brand-soft); color: var(--brand-dark); }
+    .step { display: none; }
+    .step.active { display: block; }
+    .thumbs { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+    .thumb { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; background: var(--surface); }
+    .thumb img, .config img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #eceeed; border-radius: 6px; transition: transform 0.2s; }
+    .config { display: grid; grid-template-columns: 160px 1fr; gap: 14px; }
+    .config img { width: 160px; }
+    .dpi-warning { background: #fff1d6; color: #6b4300; border-radius: 8px; padding: 10px; }
+    .dpi-ok { color: var(--ok); font-weight: 600; }
+    .total { font-size: 1.4rem; font-weight: 800; }
+    .slip { border: 2px dashed var(--border); padding: 16px; border-radius: var(--radius); }
+    .barcode { font-family: ui-monospace, monospace; font-size: 1.4rem; letter-spacing: 0.2em; }
+    @media (max-width: 600px) { .config { grid-template-columns: 1fr; } .config img { width: 100%; } }
+    @media print { header, nav, .no-print, details, #toast { display: none !important; } .tab { display: none !important; } #slip-card { display: block !important; } }
+  </style>
+</head>
+<body data-api-port="5206">
+  <header>
+    <div>
+      <h1>📷 Fotohuset Click</h1>
+      <p>Bestil dine billeder som print – hent dem i butikken eller få dem sendt</p>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="order">Bestil print</button>
+    <button data-tab="mine">Min ordre</button>
+    <button data-tab="queue">Ordrekø (operatør)</button>
+    <button data-tab="catalog">Produktkatalog</button>
+  </nav>
+
+  <main>
+    <!-- Kundefladen: højst fem trin fra upload til betaling (§11) -->
+    <section class="tab active" id="tab-order">
+      <div class="wizard" id="wizard">
+        <span data-step="1">1 Upload</span><span data-step="2">2 Vælg format</span><span data-step="3">3 Kurv</span>
+        <span data-step="4">4 Oplysninger og betaling</span><span data-step="5">5 Kvittering</span>
+      </div>
+
+      <div class="step card" id="step-1">
+        <h2>Upload dine billeder</h2>
+        <p class="muted">JPEG, PNG eller TIFF fra telefon eller computer.</p>
+        <div class="toolbar">
+          <input type="file" id="file-input" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,image/jpeg,image/png,image/tiff">
+          <button class="secondary" id="sample-button">Brug eksempelbilleder</button>
+        </div>
+        <div class="thumbs" id="thumbs"></div>
+        <div class="actions" style="margin-top:14px"><button data-goto="2">Næste: vælg format</button></div>
+      </div>
+
+      <div class="step" id="step-2">
+        <div id="config-list"></div>
+        <div class="actions"><button class="secondary" data-goto="1">Tilbage</button><button data-goto="3">Næste: se kurven</button></div>
+      </div>
+
+      <div class="step card" id="step-3">
+        <h2>Din kurv</h2>
+        <div id="cart"></div>
+        <div class="actions" style="margin-top:14px"><button class="secondary" data-goto="2">Tilbage</button><button data-goto="4">Næste: oplysninger</button></div>
+      </div>
+
+      <div class="step card" id="step-4">
+        <h2>Oplysninger og betaling</h2>
+        <form id="checkout-form">
+          <div class="row">
+            <label>Navn <input name="name" required autocomplete="name"></label>
+            <label>E-mail <input type="email" name="email" required autocomplete="email"></label>
+            <label>Telefon <input name="phone" required autocomplete="tel"></label>
+          </div>
+          <fieldset>
+            <legend>Levering</legend>
+            <label><input type="radio" name="delivery" value="AFHENTNING" checked> Hent i butikken (gratis)</label>
+            <label><input type="radio" name="delivery" value="FORSENDELSE"> Send til mig (<span id="shipping-price"></span>)</label>
+          </fieldset>
+          <label id="address-label" hidden>Adresse <input name="address" autocomplete="street-address"></label>
+          <label style="display:flex;gap:8px;align-items:flex-start;color:var(--text)">
+            <input type="checkbox" name="consent" required>
+            <span>Jeg giver samtykke til, at Fotohuset Click gemmer mine billeder til denne ordre. De slettes automatisk <span id="retention-days"></span> dage efter afhentning, og jeg kan selv slette dem før.</span>
+          </label>
+          <p class="total" id="checkout-total"></p>
+          <div class="actions"><button type="button" class="secondary" data-goto="3">Tilbage</button><button>Gå til betaling</button></div>
+        </form>
+        <div id="payment" hidden class="card highlight" style="margin-top:14px">
+          <h3>Betalingsudbyder (simuleret)</h3>
+          <p>Kortoplysninger indtastes hos betalingsudbyderen – de kommer aldrig ind i Fotohuset Clicks system.</p>
+          <p class="total" id="payment-amount"></p>
+          <div class="actions"><button id="pay-button">Betal</button><button class="danger" id="decline-button">Simulér afvist betaling</button></div>
+        </div>
+      </div>
+
+      <div class="step card" id="step-5">
+        <div id="receipt"></div>
+        <button id="new-order-button" class="secondary">Start en ny bestilling</button>
+      </div>
+    </section>
+
+    <!-- Kundens ordre: status, indsigt og sletning (§17) -->
+    <section class="tab" id="tab-mine">
+      <div class="card">
+        <h2>Find din ordre</h2>
+        <form id="lookup-form" class="toolbar">
+          <label>Ordrenummer <input type="number" name="id" required></label>
+          <label>Adgangsnøgle <input name="key" required></label>
+          <button>Vis ordre</button>
+        </form>
+        <p class="muted">Prøv ordre 1 med nøglen <code>demo-grethe</code>.</p>
+      </div>
+      <div id="my-order"></div>
+    </section>
+
+    <!-- Operatørfladen -->
+    <section class="tab" id="tab-queue">
+      <div class="card no-print" id="login-card">
+        <h2>Log ind</h2>
+        <form id="login-form" class="toolbar">
+          <label>PIN <input type="password" name="pin" required placeholder="1234"></label>
+          <button>Log ind</button>
+        </form>
+      </div>
+      <div id="operator-area" hidden>
+        <div class="card no-print">
+          <div class="toolbar">
+            <h2 style="margin:0;flex:1">Produktionskø <span class="muted" id="operator-name"></span></h2>
+            <label>Papirrulle <select id="roll-filter">
+              <option value="">Alle</option><option>102</option><option>127</option><option>152</option>
+              <option>203</option><option>210</option><option>254</option><option>305</option>
+            </select></label>
+            <button class="secondary" id="logout-button">Log ud</button>
+          </div>
+          <div id="queue-table"></div>
+          <p class="muted" id="queue-info"></p>
+        </div>
+        <div id="slip-card"></div>
+      </div>
+    </section>
+
+    <!-- Indehaveren: produktkatalog og indstillinger (FK23, §14) -->
+    <section class="tab" id="tab-catalog">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Produkter</h2>
+          <form id="product-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Betegnelse <input name="label" required placeholder="10 × 15 cm"></label>
+              <label>Bredde (mm) <input type="number" name="width_mm" min="89" max="305" required></label>
+              <label>Højde (mm) <input type="number" name="height_mm" min="127" max="1219" required></label>
+            </div>
+            <div class="row">
+              <label>Papirrulle (mm) <select name="roll_width_mm" data-number>
+                <option>102</option><option>127</option><option>152</option><option>203</option><option>210</option><option>254</option><option>305</option>
+              </select></label>
+              <label>Overflade <select name="surface"><option value="BLANK">Blank</option><option value="SILKE">Silke</option></select></label>
+              <label>Kvalitet <select name="quality"><option value="STANDARD">Standard (720 dpi)</option><option value="HØJ">Høj (1.440 dpi)</option></select></label>
+              <label>Pris <input type="number" name="price" step="0.5" required></label>
+            </div>
+            <div class="actions"><button>Gem produkt</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="product-table"></div>
+        </div>
+        <div class="card">
+          <h2>Indstillinger</h2>
+          <form id="setting-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Nøgle <input name="key" readonly></label>
+              <label>Værdi <input type="number" step="0.5" name="value" required></label>
+            </div>
+            <button>Gem indstilling</button>
+          </form>
+          <div id="setting-table"></div>
+          <h2 style="margin-top:16px">Mest bestilte formater</h2>
+          <div id="popular-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

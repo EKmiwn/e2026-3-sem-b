@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NORMAL – Er varen på lager?</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #1a1a1a; --brand-dark: #000000; --brand-soft: #fff4b8; }</style>
+  <style>
+    header h1 { letter-spacing: 0.12em; }
+    .steps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .steps span { padding: 4px 10px; border-radius: 999px; background: #eceeed; color: var(--muted); font-size: 0.85rem; font-weight: 600; }
+    .steps span.done { background: var(--brand-soft); color: var(--brand-dark); }
+    .products { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+    .product { border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; background: var(--surface); cursor: pointer; text-align: left; color: var(--text); font-weight: normal; }
+    .product:hover, .product.selected { border-color: var(--brand); background: var(--brand-soft); }
+    .product strong { display: block; }
+    .status { font-size: 1.3rem; font-weight: 700; padding: 18px; border-radius: var(--radius); }
+    .status.PÅ_LAGER { background: #e3f3e4; color: var(--ok); }
+    .status.FÅ_TILBAGE { background: #fff1d6; color: var(--warn); }
+    .status.UDSOLGT { background: #fde4e4; color: var(--danger); }
+    .qty { width: 90px; }
+  </style>
+</head>
+<body data-api-port="5202">
+  <header>
+    <div>
+      <h1>NORMAL</h1>
+      <p>Se om varen er på lager i din butik, før du tager afsted</p>
+    </div>
+    <label style="color:#fff">Min butik
+      <select id="store-select"></select>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="find">Find vare i butik</button>
+    <button data-tab="staff">Medarbejder: lager</button>
+    <button data-tab="stats">Nøgletal</button>
+    <button data-tab="catalog">Sortiment og butikker</button>
+  </nav>
+
+  <main>
+    <!-- Kunden: søg → vælg produkt → vælg butik → lagerstatus -->
+    <section class="tab active" id="tab-find">
+      <div class="steps" id="steps">
+        <span>1 Søg</span><span>2 Vælg produkt</span><span>3 Vælg butik</span><span>4 Se lagerstatus</span>
+      </div>
+      <div class="card">
+        <form id="search-form" class="toolbar">
+          <label style="flex:1">Hvad leder du efter? <input name="q" placeholder="fx shampoo, mascara eller varenummer" required minlength="2"></label>
+          <button>Søg</button>
+        </form>
+        <div id="results"></div>
+      </div>
+      <div id="availability"></div>
+    </section>
+
+    <!-- Medarbejdere -->
+    <section class="tab" id="tab-staff">
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0;flex:1">Lager i <span id="staff-store-name"></span></h2>
+          <label>Vis <select id="staff-filter">
+            <option value="">Alle</option><option value="FÅ_TILBAGE">Få tilbage</option><option value="UDSOLGT">Udsolgt</option>
+          </select></label>
+        </div>
+        <p class="muted">Butikken vælges i toppen. Ret antallet og tryk Gem. Kunderne ser kun status, ikke antal.</p>
+        <div id="stock-table"></div>
+      </div>
+    </section>
+
+    <!-- Nøgletal -->
+    <section class="tab" id="tab-stats">
+      <div class="kpis" id="stats-kpis"></div>
+      <div class="grid wide">
+        <div class="card"><h2>Mest søgt</h2><div id="top-searches"></div></div>
+        <div class="card"><h2>Mest efterspurgte produkter</h2><div id="top-products"></div></div>
+      </div>
+      <div class="card"><h2>Pr. butik</h2><div id="store-stats"></div></div>
+    </section>
+
+    <!-- CRUD -->
+    <section class="tab" id="tab-catalog">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Produkter</h2>
+          <form id="product-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Varenr. <input name="sku" required></label>
+              <label>Navn <input name="name" required></label>
+            </div>
+            <div class="row">
+              <label>Mærke <input name="brand" required></label>
+              <label>Kategori <select name="category_id" data-number required></select></label>
+              <label>Pris <input type="number" name="price" step="0.5" required></label>
+            </div>
+            <label>Søgeord <input name="keywords" placeholder="fx shampoo hår vask"></label>
+            <div class="actions"><button>Gem produkt</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="product-table"></div>
+        </div>
+        <div class="card">
+          <h2>Butikker</h2>
+          <form id="store-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Navn <input name="name" required></label>
+              <label>By <input name="city" required></label>
+            </div>
+            <label>Adresse <input name="address" required></label>
+            <div class="row">
+              <label>Åbningstider <input name="opening_hours"></label>
+              <label>Medarbejdere <input type="number" name="employees" min="0"></label>
+            </div>
+            <div class="actions"><button>Gem butik</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="store-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

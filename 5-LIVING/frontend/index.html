@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>&amp;LIVING – Buyer Matchmaking</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #23395d; --brand-dark: #16263f; --brand-soft: #e8edf5; }</style>
+  <style>
+    .score { font-size: 1.8rem; font-weight: 800; color: var(--brand-dark); }
+    .bar { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin: 2px 0 8px; }
+    .bar span { display: block; height: 100%; background: var(--brand); }
+    .chat { max-height: 300px; overflow-y: auto; display: grid; gap: 6px; margin-bottom: 10px; }
+    .bubble { padding: 8px 12px; border-radius: 12px; background: #eceeed; max-width: 85%; }
+    .bubble.mine { background: var(--brand-soft); justify-self: end; }
+    .power { font-size: 1.5rem; font-weight: 800; color: var(--brand-dark); }
+  </style>
+</head>
+<body data-api-port="5205">
+  <header>
+    <div>
+      <h1>&amp;LIVING · Buy together</h1>
+      <p>Find compatible co-buyers and combine your purchasing power</p>
+    </div>
+    <label style="color:#fff">Signed in as
+      <select id="user-select"></select>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="profile">My profile</button>
+    <button data-tab="matches">Matches</button>
+    <button data-tab="group">Our group</button>
+    <button data-tab="homes">Homes</button>
+    <button data-tab="shortlist">Shortlist &amp; viewings</button>
+    <button data-tab="agent">&amp;LIVING agent</button>
+  </nav>
+
+  <main>
+    <!-- Profile -->
+    <section class="tab active" id="tab-profile">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Buyer profile</h2>
+          <form id="profile-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Name <input name="name" required></label>
+              <label>Age <input type="number" name="age" min="18" required></label>
+            </div>
+            <div class="row">
+              <label>E-mail <input type="email" name="email" required></label>
+              <label>Phone <input name="phone"></label>
+            </div>
+            <h3>Finances (DKK)</h3>
+            <div class="row">
+              <label>Budget (own share) <input type="number" name="budget" step="50000" required></label>
+              <label>Pre-approved loan <input type="number" name="preapproved_loan" step="50000"></label>
+              <label>Down payment <input type="number" name="down_payment" step="10000"></label>
+            </div>
+            <h3>Home</h3>
+            <div class="row">
+              <label>Preferred location <input name="preferred_location" required></label>
+              <label>Property type <select name="property_type">
+                <option value="APARTMENT">Apartment</option><option value="TOWNHOUSE">Townhouse</option><option value="HOUSE">House</option>
+              </select></label>
+            </div>
+            <div class="row">
+              <label>Minimum area (m²) <input type="number" name="min_area" required></label>
+              <label>Max. transport time (min) <input type="number" name="max_transport_min" required></label>
+            </div>
+            <h3>Lifestyle</h3>
+            <div class="row">
+              <label>Pets <select name="pets" data-number><option value="0">No</option><option value="1">Yes</option></select></label>
+              <label>Smoker <select name="smoker" data-number><option value="0">No</option><option value="1">Yes</option></select></label>
+              <label>Children <select name="has_children" data-number><option value="0">No</option><option value="1">Yes</option></select></label>
+              <label>Social rhythm <select name="social_level" data-number>
+                <option value="1">1 – very quiet</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5 – very social</option>
+              </select></label>
+            </div>
+            <label>Share my e-mail and phone with my group <select name="share_contact" data-number>
+              <option value="0">No – only messages in the app</option><option value="1">Yes</option>
+            </select></label>
+            <div class="actions"><button>Save profile</button><button type="button" class="secondary" data-reset>New buyer</button></div>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Consent</h2>
+          <p>Your financial and lifestyle data is only used to find compatible co-buyers and homes. Other buyers see your budget as a range, never your e-mail or phone unless you share them.</p>
+          <div id="consent-box"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Matches -->
+    <section class="tab" id="tab-matches">
+      <p class="muted" id="match-info"></p>
+      <div class="grid" id="match-list"></div>
+    </section>
+
+    <!-- Group -->
+    <section class="tab" id="tab-group">
+      <div id="group-view"></div>
+    </section>
+
+    <!-- Homes -->
+    <section class="tab" id="tab-homes">
+      <div class="kpis" id="power-kpis"></div>
+      <div id="home-list"></div>
+    </section>
+
+    <!-- Shortlist -->
+    <section class="tab" id="tab-shortlist">
+      <div id="shortlist"></div>
+      <div class="card">
+        <h2>Viewing requests</h2>
+        <div id="viewing-table"></div>
+      </div>
+    </section>
+
+    <!-- Agent -->
+    <section class="tab" id="tab-agent">
+      <div class="card">
+        <h2>Qualified buyer groups</h2>
+        <div id="agent-groups"></div>
+      </div>
+      <div class="card">
+        <h2>Viewing requests</h2>
+        <div id="agent-viewings"></div>
+      </div>
+      <div class="card">
+        <h2>Portfolio</h2>
+        <form id="property-form">
+          <input type="hidden" name="id">
+          <div class="row">
+            <label>Address <input name="address" required></label>
+            <label>Location <input name="location" required></label>
+            <label>Type <select name="property_type">
+              <option value="APARTMENT">Apartment</option><option value="TOWNHOUSE">Townhouse</option><option value="HOUSE">House</option>
+            </select></label>
+          </div>
+          <div class="row">
+            <label>Price <input type="number" name="price" step="50000" required></label>
+            <label>Area (m²) <input type="number" name="area" required></label>
+            <label>Rooms <input type="number" name="rooms" required></label>
+            <label>Transport (min) <input type="number" name="transport_min" required></label>
+            <label>Off-market <select name="off_market" data-number><option value="0">No</option><option value="1">Yes (skuffesag)</option></select></label>
+          </div>
+          <div class="actions"><button>Save property</button><button type="button" class="secondary" data-reset>Reset</button></div>
+        </form>
+        <div id="property-table"></div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Latest JSON response from the API</summary>
+      <pre id="last-response" class="json">No calls yet</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

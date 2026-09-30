@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DYNACAP Academy</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #14365d; --brand-dark: #0b2240; --brand-soft: #e5edf7; }</style>
+  <style>
+    .levelbar { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 10px 0 16px; }
+    .levelbar div { border-radius: 8px; padding: 10px 6px; text-align: center; font-weight: 700; background: #eceeed; color: var(--muted); font-size: 0.85rem; }
+    .levelbar .GODKENDT { background: #e3f3e4; color: var(--ok); }
+    .levelbar .AKTUEL { background: var(--brand); color: #fff; }
+    .levelbar small { display: block; font-weight: 400; }
+    .next { font-size: 1.15rem; font-weight: 700; }
+    .level.LÅST { opacity: 0.55; }
+    .check { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .check:last-child { border-bottom: none; }
+    .check input { width: 20px; height: 20px; }
+    .check.done span { text-decoration: line-through; color: var(--muted); }
+    .progress { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; }
+    .progress span { display: block; height: 100%; background: var(--brand); }
+    .lang-switch button { padding: 4px 10px; }
+  </style>
+</head>
+<body data-api-port="5207">
+  <header>
+    <div>
+      <h1>DYNACAP Academy</h1>
+      <p data-i18n="tagline">Seks niveauer fra første dag til fuldt oplært – ens i Danmark og Norge</p>
+    </div>
+    <div class="actions" style="align-items:end">
+      <div class="lang-switch actions">
+        <button class="small secondary" data-lang="da">Dansk</button>
+        <button class="small secondary" data-lang="en">English</button>
+      </div>
+      <label style="color:#fff"><span data-i18n="signedIn">Logget ind som</span>
+        <select id="user-select"></select>
+      </label>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button data-tab="mine" data-i18n="tabMine" data-roles="KONSULENT">Min oplæring</button>
+    <button data-tab="mentees" data-i18n="tabMentees" data-roles="VEJLEDER HR LEDELSE">Konsulenter</button>
+    <button data-tab="hr" data-i18n="tabHr" data-roles="HR">Forløb og indhold</button>
+    <button data-tab="report" data-i18n="tabReport" data-roles="LEDELSE HR">Statusrapport</button>
+  </nav>
+
+  <main>
+    <!-- Konsulentens forside (F2, F3, F8) -->
+    <section class="tab" id="tab-mine">
+      <div id="my-progress"></div>
+    </section>
+
+    <!-- Vejleder: godkend niveau (F4, F5) -->
+    <section class="tab" id="tab-mentees">
+      <div class="card">
+        <div id="consultant-table"></div>
+      </div>
+      <div id="mentee-progress"></div>
+    </section>
+
+    <!-- HR: opret forløb (F1) og ret indhold uden udvikler (afsnit 14) -->
+    <section class="tab" id="tab-hr">
+      <div class="grid wide">
+        <div class="card">
+          <h2 data-i18n="newConsultant">Ny konsulent – opret forløb</h2>
+          <form id="consultant-form">
+            <div class="row">
+              <label><span data-i18n="name">Navn</span> <input name="name" required></label>
+              <label>E-mail <input type="email" name="email" required></label>
+            </div>
+            <div class="row">
+              <label><span data-i18n="office">Kontor</span> <select name="office_id" data-number required></select></label>
+              <label><span data-i18n="mentor">Vejleder</span> <select name="mentor_id" data-number required></select></label>
+            </div>
+            <div class="row">
+              <label><span data-i18n="startDate">Startdato</span> <input type="date" name="start_date" required></label>
+              <label><span data-i18n="language">Sprog</span> <select name="language"><option value="da">Dansk</option><option value="en">English</option></select></label>
+            </div>
+            <button data-i18n="createProgramme">Opret forløb med seks niveauer</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2 data-i18n="editLevel">Ret niveau</h2>
+          <form id="level-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Nr. <input type="number" name="number" readonly></label>
+              <label>Titel (da) <input name="title_da" required></label>
+              <label>Title (en) <input name="title_en" required></label>
+            </div>
+            <label>"Kan"-mål (da) <textarea name="goal_da" required></textarea></label>
+            <label>Goal (en) <textarea name="goal_en" required></textarea></label>
+            <div class="row">
+              <label>Læringsform <input name="learning_form" required></label>
+              <label>Uger min. <input type="number" name="estimate_weeks_min" required></label>
+              <label>Uger maks. <input type="number" name="estimate_weeks_max" required></label>
+              <label>Kræver certificering <input name="requires_certification"></label>
+            </div>
+            <button data-i18n="save">Gem</button>
+          </form>
+        </div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="levels">Niveauer</h2>
+        <div id="level-table"></div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="activities">Aktiviteter</h2>
+        <form id="activity-form">
+          <input type="hidden" name="id">
+          <div class="row">
+            <label>Niveau <select name="level_id" data-number required></select></label>
+            <label>Titel (da) <input name="title_da" required></label>
+            <label>Title (en) <input name="title_en" required></label>
+            <label>Type <select name="type">
+              <option>INTRO</option><option>TRAILHEAD</option><option>ØVELSE</option><option>CASE</option><option>PROJEKT</option><option>SAMTALE</option>
+            </select></label>
+            <label>Link <input name="link"></label>
+            <label>Rækkefølge <input type="number" name="sort"></label>
+          </div>
+          <div class="actions"><button data-i18n="save">Gem</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+        </form>
+        <div id="activity-table"></div>
+      </div>
+    </section>
+
+    <!-- Ledelse: statusrapport pr. kontor (F7) -->
+    <section class="tab" id="tab-report">
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0;flex:1" data-i18n="reportTitle">Status pr. kontor</h2>
+          <button id="send-report" data-i18n="sendReport">Send statusrapport nu</button>
+        </div>
+        <div id="report-table"></div>
+        <p class="muted" id="report-info"></p>
+      </div>
+      <div class="card">
+        <h2 data-i18n="sentReports">Sendte rapporter</h2>
+        <div id="report-log"></div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

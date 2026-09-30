@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Movia – Den Forudsigelige Rejse</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <!-- Roligt, lav-stimuli udtryk: afdæmpede farver og god luft (afsnit 4.1) -->
+  <style>:root { --brand: #3f6372; --brand-dark: #2c4652; --brand-soft: #e7eff2; --bg: #f4f6f6; }</style>
+  <style>
+    .option { display: grid; gap: 6px; }
+    .option .time { font-size: 1.4rem; font-weight: 700; color: var(--brand-dark); }
+    .level-ROLIG { background: #e3f3e4; color: var(--ok); }
+    .level-MIDDEL { background: #fff1d6; color: var(--warn); }
+    .level-TRAVL { background: #fde4e4; color: var(--danger); }
+    .heat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .heat div { border-radius: var(--radius); padding: 12px; text-align: center; }
+    .heat strong { display: block; }
+    .timeline { list-style: none; margin: 0; padding: 0; }
+    .timeline li { display: grid; grid-template-columns: 24px 60px 1fr; gap: 10px; align-items: center; padding: 10px 0; }
+    .timeline .dot { width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--border); margin: 0 auto; }
+    .timeline .PASSERET { color: var(--muted); }
+    .timeline .PASSERET .dot { background: var(--border); }
+    .timeline .HER .dot { background: var(--brand); border-color: var(--brand); }
+    .timeline .HER { font-weight: 700; }
+    .big { font-size: 1.05rem; padding: 14px 16px; }
+    .signal { font-size: 1.2rem; padding: 18px; border-radius: var(--radius); background: #fff6d8; border: 2px solid #e7c14a; }
+  </style>
+</head>
+<body data-api-port="5201">
+  <header>
+    <div>
+      <h1>🌻 Den Forudsigelige Rejse</h1>
+      <p>Movia · roligste rute, digitalt solsikkesignal og visuel tidslinje</p>
+    </div>
+    <label style="color:#fff">Passager
+      <select id="passenger-select"></select>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="plan">Planlæg rejse</button>
+    <button data-tab="trip">Min rejse</button>
+    <button data-tab="driver">Chauffør</button>
+    <button data-tab="sensors">Sensordata</button>
+    <button data-tab="profile">Profil og feedback</button>
+  </nav>
+
+  <main>
+    <!-- P1: Planlæg rolig rejse -->
+    <section class="tab active" id="tab-plan">
+      <div class="card">
+        <h2>Hvor skal du hen?</h2>
+        <form id="search-form">
+          <div class="row">
+            <label>Fra <select name="from_stop_id" required></select></label>
+            <label>Til <select name="to_stop_id" required></select></label>
+            <label>Tidspunkt <input type="time" name="time"></label>
+          </div>
+          <button class="big">Find rolig rejse</button>
+        </form>
+      </div>
+      <div id="recommendation"></div>
+      <div class="grid" id="options"></div>
+      <div id="heatmap"></div>
+    </section>
+
+    <!-- P4: Guid rejsen -->
+    <section class="tab" id="tab-trip">
+      <div class="card">
+        <label>Rejse <select id="trip-select"></select></label>
+      </div>
+      <div id="trip-view"><p class="empty">Vælg en afgang under "Planlæg rejse".</p></div>
+    </section>
+
+    <!-- P3: Chaufførens skærm -->
+    <section class="tab" id="tab-driver">
+      <div class="card">
+        <label>Chaufførens bus <select id="bus-select"></select></label>
+        <p class="muted">Signalet viser kun en kode og et stop – aldrig passagerens navn eller diagnose.</p>
+      </div>
+      <div id="driver-signals"></div>
+    </section>
+
+    <!-- P2: Sensordata -->
+    <section class="tab" id="tab-sensors">
+      <div class="kpis" id="stats-kpis"></div>
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0;flex:1">Busser – aktuelt varmekort</h2>
+          <button id="simulate-button" class="secondary">Simulér nye sensormålinger</button>
+        </div>
+        <div id="fleet-table"></div>
+      </div>
+      <div class="card">
+        <h2>Registrér måling manuelt</h2>
+        <form id="reading-form" class="row">
+          <label>Bus <select name="bus_id" data-number required></select></label>
+          <label>Område <select name="area"><option>FORREST</option><option>MIDTEN</option><option>BAGERST</option></select></label>
+          <label>Støj (dB) <input type="number" name="noise_db" min="30" max="100" value="55" required></label>
+          <label>Trængsel (%) <input type="number" name="crowding_pct" min="0" max="100" value="40" required></label>
+          <button>Send måling</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Profil (FR6) og feedback (FR7) -->
+    <section class="tab" id="tab-profile">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Min profil</h2>
+          <form id="profile-form">
+            <input type="hidden" name="id">
+            <label>Navn <input name="name" required></label>
+            <label>Uddannelsessted <input name="school"></label>
+            <label>Digitalt solsikkesignal
+              <select name="sunflower_enabled" data-number>
+                <option value="1">Slået til – chaufføren får besked, når jeg stiger på</option>
+                <option value="0">Slået fra</option>
+              </select>
+            </label>
+            <label>Giv mig besked
+              <select name="notify_stops_before" data-number>
+                <option value="1">1 stop før jeg skal af</option>
+                <option value="2">2 stop før</option>
+                <option value="3">3 stop før</option>
+              </select>
+            </label>
+            <div class="actions"><button>Gem profil</button><button type="button" class="secondary" data-reset>Ny passager</button></div>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Feedback fra rejser</h2>
+          <div id="feedback-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

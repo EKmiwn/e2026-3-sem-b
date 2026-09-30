@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GreenMobility FAMILY</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #0f7a4f; --brand-dark: #0a5738; --brand-soft: #e3f4ec; }</style>
+  <style>
+    .plans { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .plan { border: 2px solid var(--border); border-radius: var(--radius); padding: 16px; background: var(--surface); cursor: pointer; }
+    .plan.selected { border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-soft); }
+    .plan .price { font-size: 1.8rem; font-weight: 800; color: var(--brand-dark); }
+    .usage { height: 12px; background: var(--border); border-radius: 999px; overflow: hidden; }
+    .usage span { display: block; height: 100%; background: var(--brand); }
+    .credits { font-size: 2rem; font-weight: 800; color: var(--brand-dark); }
+    .journey { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+    .journey span { background: var(--brand-soft); color: var(--brand-dark); padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; }
+    .gap-pos { background: #fde4e4; } .gap-neg { background: #e3f3e4; }
+    .member-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: end; }
+  </style>
+</head>
+<body data-api-port="5209">
+  <header>
+    <div>
+      <h1>GreenMobility FAMILY</h1>
+      <p>Bil til hele familien – når I har brug for den</p>
+    </div>
+    <label style="color:#fff">Familie
+      <select id="family-select"></select>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="signup">Opdag og tilmeld</button>
+    <button data-tab="family">Vores familie</button>
+    <button data-tab="book">Book bil</button>
+    <button data-tab="credits">GreenCredits og partnere</button>
+    <button data-tab="ops">Operations</button>
+  </nav>
+
+  <main>
+    <div class="journey">
+      <span>Opdager</span><span>Tilmeld</span><span>Planlæg</span><span>Reserver</span><span>Kør</span><span>Belønnes</span><span>Book igen</span>
+    </div>
+
+    <!-- Opdager + Tilmeld -->
+    <section class="tab active" id="tab-signup">
+      <div class="card">
+        <h2>Vælg jeres abonnement</h2>
+        <div class="plans" id="plan-list"></div>
+      </div>
+      <div class="grid wide">
+        <div class="card">
+          <h2>Tilmeld familien</h2>
+          <form id="signup-form">
+            <input type="hidden" name="plan_id">
+            <div class="row">
+              <label>Familiens navn <input name="name" required placeholder="Familien Jensen"></label>
+              <label>Hjemmezone <select name="home_zone_id" data-number></select></label>
+            </div>
+            <div id="member-rows"></div>
+            <button type="button" class="secondary small" id="add-member">+ Tilføj medlem</button>
+            <div class="row">
+              <label>Kortnummer <input name="card_number" inputmode="numeric" required placeholder="4242 4242 4242 4242"></label>
+              <label>Udløb (MM/ÅÅ) <input name="card_expiry" required placeholder="12/28"></label>
+            </div>
+            <p class="muted" id="selected-plan">Vælg et abonnement ovenfor.</p>
+            <button>Tilmeld og betal</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Partnerfordele</h2>
+          <ul class="list" id="partner-benefits"></ul>
+          <h3 style="margin-top:14px">Biltyper</h3>
+          <div id="car-type-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Familiens overblik + Book igen -->
+    <section class="tab" id="tab-family">
+      <div id="dashboard"></div>
+    </section>
+
+    <!-- Planlæg + Reserver -->
+    <section class="tab" id="tab-book">
+      <div class="card">
+        <h2>Find en bil</h2>
+        <form id="search-form">
+          <div class="row">
+            <label>Zone <select name="zone_id" data-number required></select></label>
+            <label>Biltype <select name="car_type_id" data-number required></select></label>
+            <label>Fra <input type="datetime-local" name="start" required></label>
+            <label>Til <input type="datetime-local" name="end" required></label>
+            <label>Fører <select name="member_id" data-number required></select></label>
+          </div>
+          <button>Vis ledige biler</button>
+        </form>
+      </div>
+      <div id="availability"></div>
+    </section>
+
+    <!-- Belønnes -->
+    <section class="tab" id="tab-credits">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Registrér partneraktivitet</h2>
+          <p class="muted">Partneren registrerer familiens besøg – det udløser GreenCredits (1 credit = 1 kr. på en tur).</p>
+          <form id="activity-form">
+            <label>Partner <select name="partner_id" data-number required></select></label>
+            <label>Beskrivelse <input name="description" placeholder="fx Familiebillet"></label>
+            <button>Registrér for den valgte familie</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>GreenCredits</h2>
+          <div class="credits" id="credit-balance"></div>
+          <div id="credit-table"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Partnere</h2>
+        <form id="partner-form">
+          <input type="hidden" name="id">
+          <div class="row">
+            <label>Navn <input name="name" required></label>
+            <label>Kategori <input name="category" required></label>
+            <label>Fordel <input name="benefit" required></label>
+            <label>Credits pr. aktivitet <input type="number" name="credits_per_activity" min="1" required></label>
+          </div>
+          <div class="actions"><button>Gem partner</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+        </form>
+        <div id="partner-table"></div>
+      </div>
+    </section>
+
+    <!-- Datadrevet flådestyring -->
+    <section class="tab" id="tab-ops">
+      <div class="kpis" id="stats-kpis"></div>
+      <div class="card">
+        <form id="forecast-form" class="toolbar">
+          <h2 style="margin:0;flex:1">Forecast og flådeplacering</h2>
+          <label>Ugedag <select name="weekday" data-number></select></label>
+          <label>Tidsrum <select name="block" data-number></select></label>
+          <button>Beregn</button>
+        </form>
+        <p class="muted" id="forecast-info"></p>
+        <div id="forecast-table"></div>
+      </div>
+      <div class="grid wide">
+        <div class="card">
+          <h2>Anbefalede flytninger</h2>
+          <div id="moves"></div>
+          <h3 style="margin-top:14px">Seneste flytninger</h3>
+          <div id="relocation-table"></div>
+        </div>
+        <div class="card">
+          <h2>Flåde</h2>
+          <div id="car-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coop – Grønne Besparelser</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #c8102e; --brand-dark: #940b22; --brand-soft: #fde8eb; }</style>
+  <style>
+    .labels { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+    .yellow { background: #ffe14d; border: 1px solid #e0c200; border-radius: var(--radius); padding: 14px; color: #1d1d1d; }
+    .yellow .price { font-size: 1.8rem; font-weight: 800; }
+    .yellow .before { text-decoration: line-through; opacity: 0.7; }
+    .yellow .pct { float: right; background: #c8102e; color: #fff; border-radius: 999px; padding: 2px 10px; font-weight: 700; }
+    .discounts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .discounts button { font-size: 1.2rem; padding: 14px 0; }
+    .discounts button.selected { background: #ffe14d; color: #1d1d1d; border-color: #e0c200; }
+    .terminal { max-width: 460px; }
+    .scan-product { font-size: 1.1rem; font-weight: 700; }
+  </style>
+</head>
+<body data-api-port="5203">
+  <header>
+    <div>
+      <h1>Coop · Grønne Besparelser</h1>
+      <p>Gule mærker live fra din egen SuperBrugsen</p>
+    </div>
+    <label style="color:#fff">Kunde i appen
+      <select id="customer-select"></select>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="app">Coop-appen</button>
+    <button data-tab="terminal">Håndterminal (medarbejder)</button>
+    <button data-tab="stats">Nøgletal</button>
+    <button data-tab="admin">Varer og kunder</button>
+  </nav>
+
+  <main>
+    <!-- Kunden: F1, F2, F5 -->
+    <section class="tab active" id="tab-app">
+      <div class="card">
+        <form id="preferences-form" class="toolbar">
+          <label>Min butik <select name="store_id" data-number></select></label>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text)">
+            <input type="checkbox" name="notifications_consent"> Giv mig besked, når min butik nedsætter en vare
+          </label>
+          <button>Gem</button>
+        </form>
+        <p class="muted" id="consent-text"></p>
+      </div>
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="margin:0;flex:1" id="feed-title">Gule mærker</h2>
+          <span class="muted" id="feed-updated"></span>
+        </div>
+        <div id="feed"></div>
+      </div>
+      <div class="card">
+        <h2>Mine beskeder</h2>
+        <ul class="list" id="notifications"></ul>
+      </div>
+    </section>
+
+    <!-- Medarbejderen: F3 -->
+    <section class="tab" id="tab-terminal">
+      <div class="grid wide">
+        <div class="card terminal">
+          <h2>Nyt gult mærke</h2>
+          <label>Medarbejder <select id="employee-select"></select></label>
+          <form id="scan-form" class="toolbar" style="margin-top:10px">
+            <label style="flex:1">Scan stregkode <input name="ean" inputmode="numeric" placeholder="5701234…" required></label>
+            <button>Scan</button>
+          </form>
+          <p class="muted">Tip: klik på en vare nedenfor for at "scanne" den.</p>
+          <div id="quick-scan" class="actions"></div>
+          <form id="label-form" hidden>
+            <p class="scan-product" id="scan-product"></p>
+            <div class="discounts" id="discounts"></div>
+            <div class="row">
+              <label>Antal på hylden <input type="number" name="quantity" min="1" value="1" required></label>
+              <label>Sidste anvendelsesdato <input type="date" name="expiry_date" required></label>
+            </div>
+            <p id="price-preview" class="muted"></p>
+            <button>Opret mærke</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Mærker i butikken</h2>
+          <p class="muted">"Sælg 1" simulerer et salg i kassen. Når sidste vare er solgt, forsvinder mærket fra appen.</p>
+          <div id="label-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Nøgletal -->
+    <section class="tab" id="tab-stats">
+      <div class="kpis" id="stats-kpis"></div>
+      <div class="card"><h2>Pr. butik</h2><div id="store-stats"></div></div>
+    </section>
+
+    <!-- CRUD -->
+    <section class="tab" id="tab-admin">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Varer (Coop One)</h2>
+          <form id="product-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>EAN <input name="ean" required></label>
+              <label>Navn <input name="name" required></label>
+            </div>
+            <div class="row">
+              <label>Kategori <input name="category" required></label>
+              <label>Normalpris <input type="number" step="0.05" name="normal_price" required></label>
+            </div>
+            <div class="actions"><button>Gem vare</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="product-table"></div>
+        </div>
+        <div class="card">
+          <h2>Kunder</h2>
+          <form id="customer-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Navn <input name="name" required></label>
+              <label>E-mail <input type="email" name="email" required></label>
+            </div>
+            <div class="actions"><button>Gem kunde</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="customer-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

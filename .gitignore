@@ -1,0 +1,10 @@
+group_members.txt
+*.pdf
+*.pptx
+*.docx
+*.dotx
+__pycache__/
+.venv/
+venv/
+database.db
+.DS_Store

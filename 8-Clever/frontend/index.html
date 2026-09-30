@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clever – Opladning der bare virker</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <!-- Clevers visuelle identitet (afsnit 10): Clever Grøn, mint som accent, sand som flade, pilleknapper -->
+  <style>:root { --brand: #003732; --brand-dark: #002421; --brand-soft: #e6ebeb; --bg: #f2f1e5; --ok: #1f8a61; --danger: #e2284d; --radius: 14px; }</style>
+  <style>
+    button { border-radius: 9999px; min-height: 44px; padding-left: 18px; padding-right: 18px; }
+    button.small { min-height: 32px; }
+    .primary-cta { background: #b9fdb3; border-color: #b9fdb3; color: #003732; }
+    .primary-cta:hover { background: #a3f59c; }
+    .green-badge { display: inline-block; background: #b9fdb3; color: #003732; border-radius: 999px; padding: 3px 10px; font-weight: 700; font-size: 0.8rem; }
+    .st { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 0.75rem; font-weight: 700; }
+    .st.LEDIG { background: #4fc79b; color: #003732; }
+    .st.OPTAGET { background: #dfdfdf; color: #3b3b3f; }
+    .st.UDE_AF_DRIFT { background: #e2284d; color: #fff; }
+    .loc { display: grid; gap: 6px; }
+    .loc h3 { margin: 0; }
+    .free { font-size: 1.6rem; font-weight: 800; color: var(--brand); }
+    .light { display: inline-block; width: 14px; height: 14px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
+    .light.GRØN { background: #4fc79b; } .light.GUL { background: #ffeb5a; } .light.RØD { background: #e2284d; }
+    .warning { background: #ffeb5a; color: #3b3200; border-radius: 10px; padding: 10px 12px; }
+    .dark { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .dark .muted, .dark h2, .dark h3 { color: #cfe0dd; }
+    .big { font-size: 2.2rem; font-weight: 800; }
+    .battery { height: 14px; background: #335f5b; border-radius: 999px; overflow: hidden; }
+    .battery span { display: block; height: 100%; background: #b9fdb3; transition: width 0.5s; }
+    .guide li { margin-bottom: 4px; }
+    .stops { list-style: none; padding: 0; margin: 0; border-left: 3px solid var(--brand); }
+    .stops li { padding: 8px 0 12px 16px; position: relative; }
+    .stops li::before { content: ""; position: absolute; left: -9px; top: 12px; width: 14px; height: 14px; border-radius: 50%; background: #b9fdb3; border: 2px solid var(--brand); }
+  </style>
+</head>
+<body data-api-port="5208">
+  <header>
+    <div>
+      <h1>clever</h1>
+      <p>Opladning der bare virker – gennemsigtig pris og dokumenteret grøn</p>
+    </div>
+    <div class="actions" style="align-items:end">
+      <label style="color:#fff">Bruger <select id="user-select"></select></label>
+      <label style="color:#fff">Min position <select id="position-select"></select></label>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="map">Find stander</button>
+    <button data-tab="charge">Opladning</button>
+    <button data-tab="favorites">Faste stop <span id="alert-count"></span></button>
+    <button data-tab="route">Planlæg tur</button>
+    <button data-tab="fault">Rapportér fejl</button>
+    <button data-tab="overview">Forbrug</button>
+    <button data-tab="ops">Drift</button>
+  </nav>
+
+  <main>
+    <!-- UC-1: Find ledig stander (FR-1, FR-2, FR-16) -->
+    <section class="tab active" id="tab-map">
+      <div class="card">
+        <form id="filter-form" class="toolbar">
+          <label>Stik <select name="plug"><option value="">Alle</option><option>CCS</option><option>TYPE2</option><option>CHADEMO</option></select></label>
+          <label>Min. effekt <select name="min_power" data-number><option value="">Alle</option><option value="50">50 kW</option><option value="150">150 kW</option><option value="300">300 kW</option></select></label>
+          <label>Maks. pris (kr./kWh) <input type="number" name="max_price" step="0.25" min="0"></label>
+          <label>Operatør <select name="operator_id" data-number></select></label>
+          <label style="display:flex;gap:6px;align-items:center;color:var(--text)"><input type="checkbox" name="only_free"> Kun ledige</label>
+          <button>Filtrér</button>
+        </form>
+        <p class="muted">Filtrene gemmes på din profil og bruges næste gang.</p>
+      </div>
+      <div class="grid" id="location-list"></div>
+    </section>
+
+    <!-- UC-2 – UC-4: Start, følg og afslut (FR-3 – FR-8) -->
+    <section class="tab" id="tab-charge">
+      <div id="start-area" class="grid wide">
+        <div class="card">
+          <h2>Start opladning</h2>
+          <div class="actions" style="margin-bottom:12px">
+            <button class="primary-cta" id="auto-button">Jeg står ved standeren</button>
+          </div>
+          <form id="code-form" class="toolbar">
+            <label style="flex:1">QR-kode eller stander-ID <input name="code" placeholder="fx CLV-3001" required></label>
+            <button class="secondary">Find stander</button>
+          </form>
+        </div>
+        <div id="quote"></div>
+      </div>
+      <div id="session-area"></div>
+    </section>
+
+    <!-- FR-9, FR-10, FR-11 -->
+    <section class="tab" id="tab-favorites">
+      <div class="card">
+        <h2>Advarsler</h2>
+        <ul class="list" id="alerts"></ul>
+      </div>
+      <div class="grid" id="favorite-list"></div>
+    </section>
+
+    <!-- UC-7: ruteplan med ladestop (FR-13, FR-14) -->
+    <section class="tab" id="tab-route">
+      <div class="card">
+        <form id="route-form" class="toolbar">
+          <label>Fra <select name="from"></select></label>
+          <label>Til <select name="to"></select></label>
+          <label>Batteri ved start (%) <input type="number" name="battery" min="10" max="100" value="80"></label>
+          <button>Planlæg</button>
+        </form>
+      </div>
+      <div id="route-result"></div>
+    </section>
+
+    <!-- UC-5: fejlfinding uden at ringe (FR-12) -->
+    <section class="tab" id="tab-fault">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Hvad er problemet?</h2>
+          <form id="fault-form">
+            <label>Stander-ID <input name="charger_code" placeholder="fx CLV-2002" required></label>
+            <label>Problem <select name="category" id="fault-category">
+              <option value="STARTER_IKKE">Opladningen starter ikke</option>
+              <option value="FORKERT_STATUS">Viser optaget, men er ledig</option>
+              <option value="STIK_BESKADIGET">Kabel eller stik er beskadiget</option>
+              <option value="BETALING">Betalingen fejler</option>
+              <option value="ANDET">Andet</option>
+            </select></label>
+            <div class="card" style="background:var(--brand-soft)">
+              <strong>Prøv først</strong>
+              <ol class="guide" id="fault-guide"></ol>
+            </div>
+            <label>Beskrivelse <textarea name="description" placeholder="Kort beskrivelse"></textarea></label>
+            <label>Foto (valgfrit) <input type="file" accept="image/*" id="fault-photo"></label>
+            <button>Send fejlrapport</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Mine sager</h2>
+          <div id="my-reports"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- UC-8: forbrugsoverblik (FR-15) -->
+    <section class="tab" id="tab-overview">
+      <div class="kpis" id="overview-kpis"></div>
+      <div class="card">
+        <h2>Pr. måned – seneste 12 måneder</h2>
+        <div id="month-table"></div>
+        <p id="advice"></p>
+      </div>
+    </section>
+
+    <!-- Drift: status fra standere (OCPP) og fejlrapporter -->
+    <section class="tab" id="tab-ops">
+      <div class="card">
+        <h2>Fejlrapporter fra brugere</h2>
+        <div id="ops-reports"></div>
+      </div>
+      <div class="card">
+        <h2>Standere (simuleret OCPP-status)</h2>
+        <p class="muted">Sæt en stander ude af drift for at se push-advarslen til brugere med den som fast stop.</p>
+        <div id="ops-chargers"></div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

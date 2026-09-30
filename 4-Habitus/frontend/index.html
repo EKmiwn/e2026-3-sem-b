@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Habitus – Tale til dokumentation</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #4e5f8c; --brand-dark: #36446a; --brand-soft: #e9ecf5; }</style>
+  <style>
+    .recorder { text-align: center; display: grid; gap: 14px; justify-items: center; }
+    .record-button { width: 150px; height: 150px; border-radius: 50%; font-size: 1.2rem; }
+    .record-button.recording { background: var(--danger); border-color: var(--danger); animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 14px rgba(198, 40, 40, 0.15); } }
+    .rec-status { font-size: 1.1rem; font-weight: 700; padding: 6px 16px; border-radius: 999px; background: #eceeed; color: var(--muted); }
+    .rec-status.OPTAGER { background: #fde4e4; color: var(--danger); }
+    .rec-status.BEHANDLER { background: #fff1d6; color: var(--warn); }
+    .rec-status.GEMT { background: #e3f3e4; color: var(--ok); }
+    .warning { background: #fff1d6; color: #6b4300; border-radius: 8px; padding: 8px 10px; margin: 4px 0; font-size: 0.9rem; }
+    .meter { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; }
+    .meter span { display: block; height: 100%; background: var(--brand); }
+    textarea.transcript { min-height: 110px; font-size: 1rem; }
+  </style>
+</head>
+<body data-api-port="5204">
+  <header>
+    <div>
+      <h1>Habitus · Tal – tjek – gem</h1>
+      <p>Tale-til-tekst-dokumentation på botilbud</p>
+    </div>
+    <label style="color:#fff">Logget ind som
+      <select id="user-select"></select>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="record">Optag</button>
+    <button data-tab="approve">Til godkendelse <span id="pending-count"></span></button>
+    <button data-tab="journal">Journal</button>
+    <button data-tab="overview">Overblik</button>
+    <button data-tab="admin">Beboere og medicin</button>
+  </nav>
+
+  <main>
+    <!-- Optagelse: start/stop, transskription -->
+    <section class="tab active" id="tab-record">
+      <div class="grid wide">
+        <div class="card recorder">
+          <label style="width:100%">Beboer (valgfri – ellers foreslår systemet ud fra talen)
+            <select id="record-resident"></select>
+          </label>
+          <button id="record-button" class="record-button">● Start</button>
+          <span id="rec-status" class="rec-status">KLAR</span>
+          <p class="muted" id="speech-support"></p>
+          <label style="width:100%;text-align:left">Transskription (kan rettes)
+            <textarea id="transcript" class="transcript" placeholder="Tryk Start og tal – eller skriv her"></textarea>
+          </label>
+          <div class="actions" style="justify-content:center">
+            <span class="muted">Prøv et eksempel:</span>
+            <button class="small secondary" data-example="Kasper var glad efter gåturen og spiste hele sin frokost.">Observation</button>
+            <button class="small secondary" data-example="Lone lærte for første gang selv at smøre sin madpakke. Husk at næste vagt roser hende.">Udvikling</button>
+            <button class="small secondary" data-example="Mo var meget urolig, så han fik 10 mg Atarax klokken 15.">Medicin</button>
+            <button class="small secondary" data-example="Han var lidt ked af det i aften og ville ikke snakke.">Usikker</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Resultat</h2>
+          <div id="result"><p class="empty">Ingen optagelse endnu.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Godkendelse -->
+    <section class="tab" id="tab-approve">
+      <div id="pending"></div>
+    </section>
+
+    <!-- Journal: se, ret, slet -->
+    <section class="tab" id="tab-journal">
+      <div class="card">
+        <label>Beboer <select id="journal-resident"></select></label>
+        <p class="muted" id="journal-medication"></p>
+      </div>
+      <div class="card">
+        <h2>Dokumentation overført til Sofus og Outlook</h2>
+        <div id="journal-table"></div>
+      </div>
+    </section>
+
+    <!-- Overblik -->
+    <section class="tab" id="tab-overview">
+      <div class="kpis" id="stats-kpis"></div>
+      <p class="muted" id="stats-assumption"></p>
+      <div class="card">
+        <h2>Alle optagelser i afdelingen</h2>
+        <div id="recording-table"></div>
+      </div>
+    </section>
+
+    <!-- CRUD -->
+    <section class="tab" id="tab-admin">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Beboere</h2>
+          <form id="resident-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Navn <input name="name" required></label>
+              <label>Kaldenavn <input name="nickname"></label>
+            </div>
+            <div class="row">
+              <label>Værelse <input name="room"></label>
+              <label>Afdeling <select name="department_id" data-number required></select></label>
+            </div>
+            <div class="actions"><button>Gem beboer</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="resident-table"></div>
+        </div>
+        <div class="card">
+          <h2>Medicinliste</h2>
+          <form id="medication-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Beboer <select name="resident_id" data-number required></select></label>
+              <label>Præparat <input name="name" required></label>
+            </div>
+            <div class="row">
+              <label>Dosis <input name="dose" required></label>
+              <label>Type <select name="is_pn" data-number><option value="0">Fast</option><option value="1">PN (efter behov)</option></select></label>
+            </div>
+            <div class="actions"><button>Gem medicin</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="medication-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

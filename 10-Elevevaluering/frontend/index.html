@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Læringsrum 2.0 – Elevevaluering</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #5b4bb7; --brand-dark: #41349a; --brand-soft: #eeebfb; }</style>
+  <style>
+    .question { padding: 14px 0; border-bottom: 1px solid var(--border); }
+    .question p { font-size: 1.1rem; margin: 0 0 8px; }
+    .scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-width: 420px; }
+    .scale button { background: var(--surface); border: 2px solid var(--border); font-size: 1.8rem; padding: 6px 0; color: inherit; }
+    .scale button.selected { border-color: var(--brand); background: var(--brand-soft); }
+    .scale-labels { display: flex; justify-content: space-between; max-width: 420px; font-size: 0.75rem; color: var(--muted); }
+    .bars { display: flex; height: 16px; border-radius: 999px; overflow: hidden; background: #eceeed; min-width: 160px; }
+    .bars span { display: block; height: 100%; }
+    .v1 { background: #c62828; } .v2 { background: #ef8a62; } .v3 { background: #d9d9d9; } .v4 { background: #7fbf7b; } .v5 { background: #2e7d32; }
+    .cat-card .value { font-size: 1.8rem; font-weight: 800; color: var(--brand-dark); }
+    .login-users { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .feedback li { padding: 8px 0; }
+    .tip { background: #fff1d6; border-radius: 8px; padding: 8px 10px; margin-top: 4px; }
+  </style>
+</head>
+<body data-api-port="5210">
+  <header>
+    <div>
+      <h1>Læringsrum 2.0 · Elevevaluering</h1>
+      <p>Sig din mening om trivsel, læring og klasselokalet</p>
+    </div>
+    <div id="who" class="actions" style="align-items:center"></div>
+  </header>
+
+  <nav class="tabs" id="tabs" hidden>
+    <button data-tab="survey" data-roles="ELEV">Spørgeskema</button>
+    <button data-tab="me" data-roles="ELEV">Min udvikling</button>
+    <button data-tab="results" data-roles="LÆRER ADMINISTRATOR">Klassens resultater</button>
+    <button data-tab="trend" data-roles="LÆRER ADMINISTRATOR">Udvikling over tid</button>
+    <button data-tab="overview" data-roles="ADMINISTRATOR">Overblik</button>
+    <button data-tab="admin" data-roles="ADMINISTRATOR">Spørgsmål og målinger</button>
+  </nav>
+
+  <main>
+    <!-- Login -->
+    <section class="card" id="login-card" style="max-width:520px;margin:40px auto">
+      <h2>Log ind</h2>
+      <form id="login-form" class="toolbar">
+        <label style="flex:1">Brugernavn <input name="username" required autocomplete="username"></label>
+        <button>Log ind</button>
+      </form>
+      <p class="muted">Testbrugere:</p>
+      <div class="login-users" id="login-users"></div>
+    </section>
+
+    <!-- Elev: besvar spørgsmål -->
+    <section class="tab" id="tab-survey">
+      <div class="card" id="survey"></div>
+    </section>
+
+    <!-- Elev: egen udvikling og feedback -->
+    <section class="tab" id="tab-me">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Din feedback</h2>
+          <ul class="list feedback" id="my-feedback"></ul>
+        </div>
+        <div class="card">
+          <h2>Det gør vi nu</h2>
+          <p class="muted">Sådan følger din lærer op på klassens svar.</p>
+          <ul class="list" id="my-follow-ups"></ul>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Din udvikling over tid</h2>
+        <div id="my-history"></div>
+      </div>
+    </section>
+
+    <!-- Lærer: resultater samlet -->
+    <section class="tab" id="tab-results">
+      <div class="card">
+        <div class="toolbar">
+          <label>Klasse <select id="class-select"></select></label>
+          <label>Måling <select id="round-select"></select></label>
+        </div>
+        <p id="participation"></p>
+      </div>
+      <div class="kpis" id="category-cards"></div>
+      <div class="card">
+        <h2>Pr. spørgsmål</h2>
+        <div id="question-table"></div>
+      </div>
+      <div class="grid wide">
+        <div class="card">
+          <h2>Kommentarer (anonyme)</h2>
+          <ul class="list" id="comments"></ul>
+        </div>
+        <div class="card">
+          <h2>Fortæl klassen, hvad I gør</h2>
+          <form id="follow-up-form">
+            <label>Emne <select name="category">
+              <option value="TRIVSEL">Trivsel</option><option value="LÆRING">Læring</option>
+              <option value="MØBLER">Møbler</option><option value="MILJØ">Miljø og larm</option>
+            </select></label>
+            <label>Tekst <textarea name="text" required placeholder="fx Vi prøver stille arbejde de første 20 minutter"></textarea></label>
+            <button>Del med klassen</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lærer: over tid -->
+    <section class="tab" id="tab-trend">
+      <div class="card">
+        <h2>Andel positive svar (4–5) pr. måling</h2>
+        <div id="trend-table"></div>
+        <p id="trend-summary"></p>
+      </div>
+    </section>
+
+    <!-- Administrator: overblik -->
+    <section class="tab" id="tab-overview">
+      <div class="card">
+        <h2>Alle klasser – andel positive svar</h2>
+        <div id="overview-table"></div>
+      </div>
+    </section>
+
+    <!-- Administrator: CRUD -->
+    <section class="tab" id="tab-admin">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Spørgsmål</h2>
+          <form id="question-form">
+            <input type="hidden" name="id">
+            <label>Spørgsmål <input name="text" required></label>
+            <div class="row">
+              <label>Kategori <select name="category">
+                <option value="TRIVSEL">Trivsel</option><option value="LÆRING">Læring</option>
+                <option value="MØBLER">Møbler</option><option value="MILJØ">Miljø og larm</option>
+              </select></label>
+              <label>Emoji <input name="emoji"></label>
+              <label>Aktiv <select name="active" data-number><option value="1">Ja</option><option value="0">Nej</option></select></label>
+              <label>Rækkefølge <input type="number" name="sort"></label>
+            </div>
+            <div class="actions"><button>Gem spørgsmål</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="question-admin-table"></div>
+        </div>
+        <div class="card">
+          <h2>Målinger</h2>
+          <form id="round-form">
+            <input type="hidden" name="id">
+            <label>Navn <input name="name" required></label>
+            <div class="row">
+              <label>Åbner <input type="date" name="opens_on" required></label>
+              <label>Lukker <input type="date" name="closes_on" required></label>
+            </div>
+            <div class="actions"><button>Gem måling</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="round-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
