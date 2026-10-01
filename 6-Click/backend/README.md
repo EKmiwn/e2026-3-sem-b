@@ -38,8 +38,8 @@ frontend/
   app.js            præsentationslag for netop dette projekt
 ```
 
-Klienten og serveren taler kun sammen via HTTP og JSON. Svarene vises i DOM'en, og det seneste
-rå JSON-svar kan ses nederst på siden under "Seneste JSON-svar fra API'et".
+Klienten og serveren taler kun sammen via HTTP og JSON. Svarene vises i DOM'en. Åbnes siden med `?debug=1`,
+kan det seneste rå JSON-svar ses nederst under "Seneste JSON-svar fra API'et". Kunderne ser det ikke.
 
 Fejl returneres altid som JSON: `{"error": "…", "path": "/api/…"}` med statuskode 400, 401, 402, 403, 404 eller 409.
 
@@ -57,6 +57,7 @@ Fejl returneres altid som JSON: `{"error": "…", "path": "/api/…"}` med statu
 | `POST` | `/api/orders/<order_id>/images` | 1.0 Håndtér billedupload: filtype, pixelmål, filstørrelse og miniature (FK1, FK2). |
 | `DELETE` | `/api/orders/<order_id>/images/<image_id>` | Fjern et billede fra kurven (og dets ordrelinjer). |
 | `POST` | `/api/orders/<order_id>/lines` | 2.0 Konfigurér printordre: format, overflade, kvalitet, beskæring, rotation og antal (FK3–FK9). |
+| `PUT` | `/api/orders/<order_id>/lines` | Læg alle billeders valg i kurven på én gang. Body: `{"lines": [...]}`. Erstatter kurvens linjer. |
 | `DELETE` | `/api/orders/<order_id>/lines/<line_id>` | Fjern en ordrelinje fra kurven. |
 | `POST` | `/api/orders/<order_id>/payment` | Svar fra betalingsudbyderen (simuleret). Ved godkendt betaling placeres ordren i produktionskøen (FK12, FK13). |
 | `POST` | `/api/orders/<order_id>/release` | Frigiv ordren til print: opretter printjobbet til C8 og sætter status 'i produktion' (FK18). |
@@ -74,4 +75,6 @@ Fejl returneres altid som JSON: `{"error": "…", "path": "/api/…"}` med statu
 | `DELETE` | `/api/settings/<item_id>` | Slet (CRUD) |
 | `GET` | `/api/settings/<item_id>` | Hent én (CRUD) |
 | `PUT` | `/api/settings/<item_id>` | Opdatér (CRUD) |
-| `GET` | `/api/stats` | Ordredata til indkøb og prissætning: formater, ordrer og omsætning. |
+| `GET` | `/api/stats` | Ordredata til indkøb og prissætning: formater, ordrer og omsætning (kræver login). |
+
+`POST`, `PUT` og `DELETE` på `/api/products` og `/api/settings` kræver operatørlogin (`X-User-Id`).

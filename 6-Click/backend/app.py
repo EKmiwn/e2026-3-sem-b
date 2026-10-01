@@ -8,6 +8,7 @@ Operatøren logger ind med PIN og sendes derefter i headeren X-User-Id (simulere
 """
 import json
 import os
+import re
 import secrets
 from datetime import date, datetime, timedelta
 
@@ -21,6 +22,15 @@ app = create_app(__name__, "Fotohuset Click")
 
 FILE_TYPES = {"JPEG": "JPEG", "JPG": "JPEG", "PNG": "PNG", "TIFF": "TIFF", "TIF": "TIFF"}   # FK1
 STATUS_FLOW = ["MODTAGET", "I_PRODUKTION", "KLAR", "AFHENTET"]               # FK19
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+PHONE_DIGITS = {"+45": (8, 8), "+46": (7, 10), "+47": (8, 8), "+298": (6, 6), "+299": (6, 6), "+49": (10, 11)}
+KEY_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # uden 0/O, 1/I/L, så nøglen er let at læse og taste
+
+
+def new_access_key():
+    """Kort, læsbar adgangsnøgle, fx K7QM-3RXA (§11: kan læses højt og tastes af alle)."""
+    chars = "".join(secrets.choice(KEY_ALPHABET) for _ in range(8))
+    return f"{chars[:4]}-{chars[4:]}"
 
 
 def setting(key):
@@ -61,7 +71,7 @@ def validate_line(image, product, quantity, rotation):
 def customer_order(order_id):
     """Kundens adgang: ordre-id + tilfældig adgangsnøgle (§15)."""
     order = get_or_404("photo_order", order_id, "Ordre")
-    if request.args.get("key") != order["access_key"]:
+    if (request.args.get("key") or "").strip().upper() != order["access_key"].upper():
         raise ApiError("Forkert adgangsnøgle til ordren", 403)
     return order
 
@@ -91,6 +101,17 @@ def order_view(order_id, include_thumbnails=True):
 
 
 # ---------------------------------------------------------------- CRUD (FK23: indehaveren redigerer katalog og priser)
+@app.before_request
+def protect_owner_endpoints():
+    """Kunderne må læse katalog og indstillinger, men kun en logget ind operatør må ændre dem eller se omsætning (§15)."""
+    if request.method == "OPTIONS":
+        return
+    if request.path.startswith(("/api/products", "/api/settings")) and request.method != "GET":
+        current_operator()
+    if request.path == "/api/stats":
+        current_operator()
+
+
 register_crud(app, "settings", "setting", fields=["key", "value", "description"], required=["key", "value"],
               update_fields=["value", "description"])
 register_crud(app, "products", "product",
@@ -105,7 +126,7 @@ def create_order():
     """Opretter en tom kurv med en tilfældig adgangsnøgle."""
     with transaction() as db:
         order_id = db.execute("INSERT INTO photo_order (access_key, created_at) VALUES (?, ?)",
-                              (secrets.token_urlsafe(12), now())).lastrowid
+                              (new_access_key(), now())).lastrowid
     order = get_or_404("photo_order", order_id)
     return jsonify(id=order_id, access_key=order["access_key"]), 201
 
@@ -159,13 +180,10 @@ def quote():
     return jsonify(validate_line(image, product, int(data.get("quantity") or 1), int(data.get("rotation") or 0)))
 
 
-@app.post("/api/orders/<int:order_id>/lines")
-def add_line(order_id):
-    """2.0 Konfigurér printordre: format, overflade, kvalitet, beskæring, rotation og antal (FK3–FK9)."""
-    order = customer_order(order_id)
-    if order["status"] != "KURV":
-        raise ApiError("Ordren er allerede bestilt", 409)
-    data = json_body()
+def prepare_line(order_id, data):
+    """2.1–2.5 for én ordrelinje: tjekker billede, produkt, beskæring, rotation og antal og beregner DPI og pris."""
+    if not isinstance(data, dict):
+        raise ApiError("Hver ordrelinje skal være et JSON-objekt")
     require(data, "image_id", "product_id")
     image = get_or_404("image", data["image_id"], "Billede")
     if image["order_id"] != order_id:
@@ -178,14 +196,43 @@ def add_line(order_id):
         raise ApiError("Beskæring skal være fyld, tilpas med kant eller helt til kant")
     quantity, rotation = int(data.get("quantity") or 1), int(data.get("rotation") or 0)
     result = validate_line(image, product, quantity, rotation)
+    row = (order_id, image["id"], product["id"], quantity, crop, rotation,
+           0 if data.get("color_correction") is False else 1,
+           result["effective_dpi"], 1 if result["dpi_warning"] else 0, result["line_price"])
+    return row, result
+
+
+INSERT_LINE = """INSERT INTO order_line (order_id, image_id, product_id, quantity, crop, rotation, color_correction,
+                                         effective_dpi, dpi_warning, line_price)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+
+
+@app.post("/api/orders/<int:order_id>/lines")
+def add_line(order_id):
+    """2.0 Konfigurér printordre: tilføj én ordrelinje (FK3–FK9)."""
+    order = customer_order(order_id)
+    if order["status"] != "KURV":
+        raise ApiError("Ordren er allerede bestilt", 409)
+    row, result = prepare_line(order_id, json_body())
     with transaction() as db:
-        db.execute("""INSERT INTO order_line (order_id, image_id, product_id, quantity, crop, rotation, color_correction,
-                                              effective_dpi, dpi_warning, line_price)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                   (order_id, image["id"], product["id"], quantity, crop, rotation,
-                    0 if data.get("color_correction") is False else 1,
-                    result["effective_dpi"], 1 if result["dpi_warning"] else 0, result["line_price"]))
+        db.execute(INSERT_LINE, row)
     return jsonify(order=order_view(order_id), **result), 201
+
+
+@app.put("/api/orders/<int:order_id>/lines")
+def replace_lines(order_id):
+    """2.0 Konfigurér printordre: læg alle billeders valg i kurven på én gang. Erstatter kurvens linjer (FK3–FK9)."""
+    order = customer_order(order_id)
+    if order["status"] != "KURV":
+        raise ApiError("Ordren er allerede bestilt", 409)
+    lines = json_body().get("lines")
+    if not isinstance(lines, list) or not lines:
+        raise ApiError("Vælg format til mindst ét billede")
+    rows = [prepare_line(order_id, line)[0] for line in lines]
+    with transaction() as db:
+        db.execute("DELETE FROM order_line WHERE order_id = ?", (order_id,))
+        db.executemany(INSERT_LINE, rows)
+    return jsonify(order_view(order_id))
 
 
 @app.delete("/api/orders/<int:order_id>/lines/<int:line_id>")
@@ -207,18 +254,42 @@ def checkout(order_id):
     if order["status"] != "KURV":
         raise ApiError("Ordren er allerede bestilt", 409)
     data = json_body()
-    require(data, "name", "email", "phone", "delivery")
+    require(data, "name", "email", "phone_country", "phone", "delivery")
     if data["delivery"] not in ("AFHENTNING", "FORSENDELSE"):
         raise ApiError("Vælg afhentning i butik eller forsendelse")
-    if data["delivery"] == "FORSENDELSE" and not data.get("address"):
-        raise ApiError("Skriv adressen, ordren skal sendes til")
+    email = data["email"].strip()
+    if not EMAIL_RE.match(email):
+        raise ApiError("Skriv en gyldig e-mailadresse, fx navn@mail.dk")
+    country, digits = data["phone_country"], re.sub(r"[\s-]", "", str(data["phone"]))
+    if country not in PHONE_DIGITS:
+        raise ApiError("Vælg landekode til telefonnummeret")
+    low, high = PHONE_DIGITS[country]
+    if not digits.isdigit() or not low <= len(digits) <= high:
+        count = f"{low}" if low == high else f"{low}–{high}"
+        raise ApiError(f"Telefonnummeret skal have {count} cifre for {country}")
+    phone = f"{country} {digits}"
+    address = None
+    if data["delivery"] == "FORSENDELSE":
+        if not all(str(data.get(f) or "").strip() for f in ("street", "postal_code", "city")):
+            raise ApiError("Skriv vej og husnummer, postnummer og by, ordren skal sendes til")
+        postal = str(data["postal_code"]).strip()
+        if not re.fullmatch(r"\d{4}", postal):
+            raise ApiError("Postnummeret skal være 4 cifre (vi sender kun inden for Danmark)")
+        if re.search(r"\d", str(data["city"])):
+            raise ApiError("Byen må ikke indeholde tal")
+        address = f"{data['street'].strip()}, {postal} {data['city'].strip()}"
     if not data.get("consent"):
         raise ApiError("Du skal give samtykke til, at vi gemmer dine billeder, indtil ordren er afhentet")
     if not query_one("SELECT id FROM order_line WHERE order_id = ?", (order_id,)):
         raise ApiError("Kurven er tom – vælg format til mindst ét billede")
     with transaction() as db:
-        customer_id = db.execute("INSERT INTO customer (name, email, phone, address, created_at) VALUES (?, ?, ?, ?, ?)",
-                                 (data["name"], data["email"], data["phone"], data.get("address"), now())).lastrowid
+        customer_id = order["customer_id"]
+        if customer_id:
+            db.execute("UPDATE customer SET name = ?, email = ?, phone = ?, address = ? WHERE id = ?",
+                       (data["name"].strip(), email, phone, address, customer_id))
+        else:
+            customer_id = db.execute("INSERT INTO customer (name, email, phone, address, created_at) VALUES (?, ?, ?, ?, ?)",
+                                     (data["name"].strip(), email, phone, address, now())).lastrowid
         db.execute("""UPDATE photo_order SET customer_id = ?, delivery = ?, consent_at = ?, note = ?,
                              payment_status = 'AFVENTER' WHERE id = ?""",
                    (customer_id, data["delivery"], now(), data.get("note"), order_id))
@@ -276,14 +347,23 @@ def operator_login():
 
 
 def purge_images():
-    """1.0 Hændelse 10 (tidsstyret): billedfiler slettes, når opbevaringsfristen efter afhentning er udløbet (FK22)."""
+    """1.0 Hændelse 10 (tidsstyret): billedfiler slettes, når opbevaringsfristen efter afhentning er udløbet (FK22).
+    Ubetalte kurve slettes helt med billeder og kontaktoplysninger efter cart_retention_days (§17)."""
     limit = (datetime.now() - timedelta(days=setting("retention_days"))).isoformat(sep=" ", timespec="seconds")
+    cart_limit = (datetime.now() - timedelta(days=setting("cart_retention_days"))).isoformat(sep=" ", timespec="seconds")
     with transaction() as db:
         cursor = db.execute("""UPDATE image SET thumbnail = NULL, deleted_at = ?
                                WHERE deleted_at IS NULL AND order_id IN
                                    (SELECT id FROM photo_order WHERE status = 'AFHENTET' AND closed_at < ?)""",
                             (now(), limit))
-    return cursor.rowcount
+        purged = cursor.rowcount
+        purged += db.execute("""SELECT COUNT(*) FROM image WHERE order_id IN
+                                   (SELECT id FROM photo_order WHERE status = 'KURV' AND created_at < ?)""",
+                             (cart_limit,)).fetchone()[0]
+        db.execute("DELETE FROM photo_order WHERE status = 'KURV' AND created_at < ?", (cart_limit,))
+        db.execute("""DELETE FROM customer WHERE id NOT IN
+                          (SELECT customer_id FROM photo_order WHERE customer_id IS NOT NULL)""")
+    return purged
 
 
 @app.get("/api/queue")
@@ -357,6 +437,8 @@ def change_status(order_id):
     new = data["status"]
     if new not in STATUS_FLOW or order["status"] not in STATUS_FLOW:
         raise ApiError("Ugyldig status")
+    if order["status"] == "MODTAGET" and new == "I_PRODUKTION":
+        raise ApiError("Brug 'Frigiv til print', så printjobbet til C8 bliver oprettet", 409)
     if abs(STATUS_FLOW.index(new) - STATUS_FLOW.index(order["status"])) != 1:
         raise ApiError(f"Status kan kun flyttes ét trin ad gangen (nu: {order['status'].lower().replace('_', ' ')})")
     message = None
@@ -366,7 +448,7 @@ def change_status(order_id):
         if new == "KLAR" and not order["notified_at"]:
             customer = get_or_404("customer", order["customer_id"])
             message = (f"Hej {customer['name']}! Din ordre {order_id} er klar til afhentning i Fotohuset Click."
-                       if order["delivery"] == "AFHENTNING" else f"Hej {customer['name']}! Din ordre {order_id} er sendt.")
+                       if order["delivery"] == "AFHENTNING" else f"Hej {customer['name']}! Din ordre {order_id} er printet og bliver sendt til dig.")
             db.execute("UPDATE photo_order SET notified_at = ? WHERE id = ?", (now(), order_id))
     return jsonify(order=order_view(order_id, include_thumbnails=False), notification=message)
 

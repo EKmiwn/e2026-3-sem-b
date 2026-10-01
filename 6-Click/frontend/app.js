@@ -7,6 +7,14 @@ const STATUS_TEXT = { KURV: "Kurv", MODTAGET: "Modtaget", I_PRODUKTION: "I produ
 const STATUS_BADGE = { KURV: "muted", MODTAGET: "warn", I_PRODUKTION: "", KLAR: "ok", AFHENTET: "muted" };
 const NEXT_ACTION = { MODTAGET: ["release", "Frigiv til print"], I_PRODUKTION: ["KLAR", "Markér klar"], KLAR: ["AFHENTET", "Afhentet"] };
 
+// api.js er fælles for alle prototyper og ændres ikke. Her sender Click operatørens login med på alle kald,
+// så også de fælles CRUD-formularer (bindCrudForm, crudButtons) i produktkataloget er logget ind (FK23, §15).
+const sharedApi = api;
+api = (path, options = {}) => sharedApi(path, {
+  ...options,
+  headers: { ...(state.operatorId ? { "X-User-Id": state.operatorId } : {}), ...(options.headers || {}) },
+});
+
 // Kundens kald sender adgangsnøglen med
 function orderApi(path, options) {
   return api(`/orders/${state.order.id}${path}${path.includes("?") ? "&" : "?"}key=${encodeURIComponent(state.order.access_key)}`, options);
@@ -56,9 +64,10 @@ document.querySelectorAll("[data-goto]").forEach((button) => button.addEventList
 async function startOrder() {
   const created = await api("/orders", { method: "POST" });
   state.order = { id: created.id, access_key: created.access_key, images: [], lines: [] };
+  state.choices = {};
   $("#thumbs").replaceChildren();
+  lockCheckout(false);
   $("#checkout-form").reset();
-  $("#payment").hidden = true;
   showStep(1);
 }
 
@@ -150,6 +159,7 @@ function renderThumbs() {
 }
 
 async function removeImage(imageId) {
+  delete state.choices[imageId];
   await run(() => orderApi(`/images/${imageId}`, { method: "DELETE" }), "Billedet er fjernet");
   await refreshOrder();
   renderThumbs();
@@ -160,10 +170,23 @@ function productFor(label, surface, quality) {
   return state.products.find((p) => p.label === label && p.surface === surface && p.quality === quality);
 }
 
+// Kundens valg pr. billede bevares, så de står der stadig, når man går tilbage fra kurven
+state.choices = {};
+
+function choiceFor(img, labels) {
+  if (!state.choices[img.id]) {
+    const line = state.order.lines.find((l) => l.image_id === img.id);
+    state.choices[img.id] = line
+      ? { label: line.label, surface: line.surface, quality: line.quality, crop: line.crop, rotation: line.rotation, quantity: line.quantity }
+      : { label: labels[1] ?? labels[0], surface: "BLANK", quality: "STANDARD", crop: "FYLD", rotation: 0, quantity: 1 };
+  }
+  return state.choices[img.id];
+}
+
 function renderConfig() {
   const labels = [...new Set(state.products.map((p) => p.label))];
   $("#config-list").replaceChildren(...state.order.images.map((img) => {
-    const choice = { label: labels[1] ?? labels[0], surface: "BLANK", quality: "STANDARD", crop: "FYLD", rotation: 0, quantity: 1 };
+    const choice = choiceFor(img, labels);
     const preview = h("img", { src: img.thumbnail || "data:,", alt: img.filename });
     const result = h("div", {});
     const select = (name, options, onchange) => {
@@ -189,7 +212,10 @@ function renderConfig() {
           h("p", { class: "total" }, `${formatKr(q.line_price)}`, h("span", { class: "muted", style: "font-size:1rem;font-weight:normal" }, ` (${formatKr(q.unit_price)} pr. stk.)`)));
       }, 150);
     };
-    const quantity = h("input", { type: "number", min: 1, max: 999, value: 1, oninput: (e) => { choice.quantity = Number(e.target.value) || 1; update(); } });
+    const quantity = h("input", {
+      type: "number", min: 1, max: 999, value: choice.quantity, inputmode: "numeric",
+      oninput: (e) => { e.target.value = e.target.value.replace(/\D/g, "").slice(0, 3); choice.quantity = Number(e.target.value) || 1; update(); },
+    });
     const card = h("div", { class: "card config" },
       h("div", {}, preview, h("small", { class: "muted" }, `${img.filename} · ${img.px_width} × ${img.px_height} px`)),
       h("div", {},
@@ -201,21 +227,26 @@ function renderConfig() {
           h("label", {}, "Antal", quantity)),
         h("div", { class: "actions", style: "margin:10px 0" },
           h("button", { class: "secondary", onclick: () => { choice.rotation = (choice.rotation + 90) % 360; update(); } }, "↻ Rotér 90°")),
-        result,
-        h("button", {
-          onclick: async () => {
-            const product = productFor(choice.label, choice.surface, choice.quality);
-            const r = await run(() => orderApi("/lines", {
-              method: "POST",
-              body: { image_id: img.id, product_id: product.id, quantity: choice.quantity, crop: choice.crop, rotation: choice.rotation },
-            }), (x) => (x.dpi_warning ? "Lagt i kurven – bemærk advarslen om kvalitet" : "Lagt i kurven"));
-            state.order = { ...r.order, access_key: state.order.access_key };
-          },
-        }, "Læg i kurven")));
+        result));
     update();
     return card;
   }));
 }
+
+// Én knap lægger alle billeder i kurven og går videre til kurven
+$("#add-all-button").addEventListener("click", async () => {
+  const lines = [];
+  for (const img of state.order.images) {
+    const c = state.choices[img.id];
+    const product = productFor(c.label, c.surface, c.quality);
+    if (!product) return toast(`Vælg et format, der findes i kataloget, til ${img.filename}`, "error");
+    lines.push({ image_id: img.id, product_id: product.id, quantity: c.quantity, crop: c.crop, rotation: c.rotation });
+  }
+  const order = await run(() => orderApi("/lines", { method: "PUT", body: { lines } }),
+    (o) => (o.warnings ? "Lagt i kurven – bemærk advarslen om kvalitet" : "Lagt i kurven"));
+  state.order = { ...order, access_key: state.order.access_key };
+  showStep(3);
+});
 
 // ---------------------------------------------------------------- Trin 3: kurv
 function renderCart() {
@@ -241,22 +272,67 @@ async function removeLine(lineId) {
 }
 
 // ---------------------------------------------------------------- Trin 4: oplysninger og betaling (FK10–FK12)
+const PHONE_RULES = { "+45": [8, 8], "+46": [7, 10], "+47": [8, 8], "+49": [10, 11], "+298": [6, 6], "+299": [6, 6] };
+
+function updatePhoneRule() {
+  const [low, high] = PHONE_RULES[$("#phone-country").value];
+  const input = $("#phone");
+  input.maxLength = high;
+  input.value = input.value.slice(0, high);
+  input.pattern = `[0-9]{${low},${high}}`;
+  input.title = low === high ? `${low} cifre` : `${low}–${high} cifre`;
+  input.placeholder = "12345678901".slice(0, low);
+}
+
+// Filtrerer tegn væk, mens kunden skriver: telefon og postnummer kun tal, by ingen tal
+function onlyAllow(selector, pattern) {
+  $(selector).addEventListener("input", (e) => {
+    const clean = e.target.value.replace(pattern, "");
+    if (clean !== e.target.value) e.target.value = clean;
+  });
+}
+
+onlyAllow("#phone", /\D/g);
+onlyAllow("[name=postal_code]", /\D/g);
+onlyAllow("[name=city]", /[0-9]/g);
+
+$("#phone-country").addEventListener("change", updatePhoneRule);
+updatePhoneRule();
+
 function renderCheckout() {
   const form = $("#checkout-form");
   const shipping = form.elements.delivery.value === "FORSENDELSE" ? state.settings.shipping_price : 0;
-  $("#address-label").hidden = !shipping;
-  form.elements.address.required = !!shipping;
+  $("#address-fields").hidden = !shipping;
+  ["street", "postal_code", "city"].forEach((name) => (form.elements[name].required = !!shipping));
   $("#checkout-total").textContent = `I alt ${formatKr(state.order.subtotal + shipping)}`;
 }
 
 $("#checkout-form").addEventListener("change", renderCheckout);
 
+// Når kunden går til betaling, låses oplysningerne, så det der vises, også er det der bliver gemt.
+// "Ret oplysninger" låser op igen og skjuler betalingen, indtil kunden har trykket "Gå til betaling" igen.
+function lockCheckout(locked) {
+  for (const field of $("#checkout-form").elements) field.disabled = locked;
+  $("#checkout-actions").hidden = locked;
+  $("#payment").hidden = !locked;
+}
+
 $("#checkout-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const result = await run(() => orderApi("/checkout", { method: "POST", body: formToJson(event.target) }));
-  $("#payment").hidden = false;
+  // formToJson (fælles) tager ikke højde for radioknapper, så leveringsformen læses direkte
+  const body = { ...formToJson(event.target), delivery: event.target.elements.delivery.value };
+  const result = await run(() => orderApi("/checkout", { method: "POST", body }));
+  await refreshOrder();
+  const c = state.order.customer;
+  $("#payment-summary").replaceChildren(
+    h("p", { style: "margin:0 0 4px" }, h("strong", {}, "Dine oplysninger")),
+    h("p", { style: "margin:0" }, `${c.name} · ${c.email} · ${c.phone}`),
+    h("p", { style: "margin:0 0 8px" }, state.order.delivery === "AFHENTNING" ? "Hentes i butikken" : `Sendes til ${c.address}`));
   $("#payment-amount").textContent = `Beløb: ${formatKr(result.amount)}`;
+  lockCheckout(true);
 });
+
+$("#edit-details-button").addEventListener("click", () => lockCheckout(false));
 
 async function pay(approved) {
   try {
@@ -277,11 +353,18 @@ function renderReceipt() {
   const o = state.order;
   $("#receipt").replaceChildren(
     h("h2", {}, `Tak for din bestilling, ${o.customer.name}!`),
-    h("p", {}, `Ordrenummer `, h("strong", {}, o.id), ` · betalt ${formatKr(o.total)} (${o.payment_ref})`),
+    h("p", {}, `Du har betalt ${formatKr(o.total)}`),
     h("p", {}, o.delivery === "AFHENTNING"
       ? `Dine print er klar til afhentning i butikken ${new Date(o.desired_ready).toLocaleDateString("da-DK", { weekday: "long", day: "numeric", month: "long" })}. Vi giver besked, når de er klar.`
       : `Dine print sendes til ${o.customer.address} og er forventet fremme ${new Date(o.desired_ready).toLocaleDateString("da-DK")}.`),
-    h("p", { class: "muted" }, "Gem ordrenummer og adgangsnøgle for at følge ordren eller slette dine billeder: ", h("code", {}, o.access_key)));
+    h("div", { class: "receipt-box" },
+      h("p", { style: "margin-top:0" }, h("strong", {}, "Gem disse to oplysninger."), " Du skal bruge dem under ", h("em", {}, "Min ordre"), " for at følge ordren eller slette dine billeder."),
+      h("dl", {},
+        h("dt", {}, "Ordrenummer"), h("dd", {}, o.id),
+        h("dt", {}, "Adgangsnøgle"), h("dd", {}, o.access_key)),
+      h("div", { class: "actions", style: "margin-top:10px" },
+        h("button", { class: "secondary", onclick: () => navigator.clipboard.writeText(`Ordrenummer: ${o.id}\nAdgangsnøgle: ${o.access_key}`).then(() => toast("Kopieret")) }, "Kopiér"))),
+    h("p", { class: "muted" }, `Betalingsreference fra betalingsudbyderen (står på din kontoudskrift): ${o.payment_ref}`));
 }
 
 $("#new-order-button").addEventListener("click", startOrder);
@@ -400,6 +483,9 @@ $("#roll-filter").addEventListener("change", loadQueue);
 
 // ---------------------------------------------------------------- Produktkatalog og indstillinger (FK23, §14)
 async function loadCatalog() {
+  $("#catalog-locked").hidden = !!state.operatorId;
+  $("#catalog-area").hidden = !state.operatorId;
+  if (!state.operatorId) return;
   const [products, settings, stats] = await Promise.all([api("/products"), api("/settings"), api("/stats")]);
   renderTable($("#product-table"), products, [
     { label: "Format", key: "label" },
@@ -432,10 +518,11 @@ bindCrudForm($("#product-form"), "products", reloadCatalog);
 bindCrudForm($("#setting-form"), "settings", reloadCatalog);
 
 // ---------------------------------------------------------------- Start
+$("#debug-panel").hidden = !new URLSearchParams(location.search).has("debug");
 setupTabs((tab) => {
   if (tab === "queue") loadQueue();
   if (tab === "catalog") loadCatalog();
 });
 loadBase()
-  .then(() => Promise.all([startOrder(), loadCatalog()]))
+  .then(startOrder)
   .catch((err) => toast(`Kan ikke hente data fra backenden: ${err.message}`, "error"));

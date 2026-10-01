@@ -25,6 +25,10 @@
     .dpi-ok { color: var(--ok); font-weight: 600; }
     .total { font-size: 1.4rem; font-weight: 800; }
     .slip { border: 2px dashed var(--border); padding: 16px; border-radius: var(--radius); }
+    .receipt-box { border: 2px solid var(--brand); border-radius: var(--radius); padding: 14px; margin: 12px 0; background: var(--brand-soft); }
+    .receipt-box dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+    .receipt-box dt { font-weight: 600; }
+    .receipt-box dd { margin: 0; font-family: ui-monospace, monospace; font-size: 1.3rem; font-weight: 700; letter-spacing: 0.05em; }
     .barcode { font-family: ui-monospace, monospace; font-size: 1.4rem; letter-spacing: 0.2em; }
     @media (max-width: 600px) { .config { grid-template-columns: 1fr; } .config img { width: 100%; } }
     @media print { header, nav, .no-print, details, #toast { display: none !important; } .tab { display: none !important; } #slip-card { display: block !important; } }
@@ -66,7 +70,7 @@
 
       <div class="step" id="step-2">
         <div id="config-list"></div>
-        <div class="actions"><button class="secondary" data-goto="1">Tilbage</button><button data-goto="3">Næste: se kurven</button></div>
+        <div class="actions"><button class="secondary" data-goto="1">Tilbage</button><button id="add-all-button">Læg i kurven</button></div>
       </div>
 
       <div class="step card" id="step-3">
@@ -80,27 +84,51 @@
         <form id="checkout-form">
           <div class="row">
             <label>Navn <input name="name" required autocomplete="name"></label>
-            <label>E-mail <input type="email" name="email" required autocomplete="email"></label>
-            <label>Telefon <input name="phone" required autocomplete="tel"></label>
+            <label>E-mail <input type="email" name="email" required autocomplete="email"
+              pattern="[^@\s]+@[^@\s]+\.[A-Za-z]{2,}" title="Skriv en gyldig e-mailadresse, fx navn@mail.dk"></label>
+          </div>
+          <div class="row">
+            <label>Landekode <select name="phone_country" id="phone-country">
+              <option value="+45" selected>Danmark +45</option>
+              <option value="+46">Sverige +46</option>
+              <option value="+47">Norge +47</option>
+              <option value="+49">Tyskland +49</option>
+              <option value="+298">Færøerne +298</option>
+              <option value="+299">Grønland +299</option>
+            </select></label>
+            <label>Telefon <input name="phone" id="phone" required inputmode="numeric" autocomplete="tel-national"
+              maxlength="8" pattern="[0-9]{8}" title="8 cifre" placeholder="12345678"></label>
           </div>
           <fieldset>
             <legend>Levering</legend>
             <label><input type="radio" name="delivery" value="AFHENTNING" checked> Hent i butikken (gratis)</label>
             <label><input type="radio" name="delivery" value="FORSENDELSE"> Send til mig (<span id="shipping-price"></span>)</label>
           </fieldset>
-          <label id="address-label" hidden>Adresse <input name="address" autocomplete="street-address"></label>
+          <div id="address-fields" hidden>
+            <p class="muted">Vi sender kun inden for Danmark.</p>
+            <div class="row">
+              <label>Vej og husnummer <input name="street" autocomplete="address-line1" placeholder="Østergade 12, 2. th."></label>
+              <label>Postnummer <input name="postal_code" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" title="4 cifre" autocomplete="postal-code" placeholder="9800"></label>
+              <label>By <input name="city" autocomplete="address-level2" placeholder="Hjørring" pattern="[^0-9]+" title="Byen må ikke indeholde tal"></label>
+            </div>
+          </div>
           <label style="display:flex;gap:8px;align-items:flex-start;color:var(--text)">
             <input type="checkbox" name="consent" required>
             <span>Jeg giver samtykke til, at Fotohuset Click gemmer mine billeder til denne ordre. De slettes automatisk <span id="retention-days"></span> dage efter afhentning, og jeg kan selv slette dem før.</span>
           </label>
           <p class="total" id="checkout-total"></p>
-          <div class="actions"><button type="button" class="secondary" data-goto="3">Tilbage</button><button>Gå til betaling</button></div>
+          <div class="actions" id="checkout-actions"><button type="button" class="secondary" data-goto="3">Tilbage</button><button>Gå til betaling</button></div>
         </form>
         <div id="payment" hidden class="card highlight" style="margin-top:14px">
           <h3>Betalingsudbyder (simuleret)</h3>
           <p>Kortoplysninger indtastes hos betalingsudbyderen – de kommer aldrig ind i Fotohuset Clicks system.</p>
+          <div id="payment-summary"></div>
           <p class="total" id="payment-amount"></p>
-          <div class="actions"><button id="pay-button">Betal</button><button class="danger" id="decline-button">Simulér afvist betaling</button></div>
+          <div class="actions">
+            <button id="pay-button">Betal</button>
+            <button class="secondary" id="edit-details-button">Ret oplysninger</button>
+            <button class="danger" id="decline-button">Simulér afvist betaling</button>
+          </div>
         </div>
       </div>
 
@@ -119,7 +147,7 @@
           <label>Adgangsnøgle <input name="key" required></label>
           <button>Vis ordre</button>
         </form>
-        <p class="muted">Prøv ordre 1 med nøglen <code>demo-grethe</code>.</p>
+        <p class="muted">Prøv ordre 1 med adgangsnøglen <code>DEMO-GRETHE</code>.</p>
       </div>
       <div id="my-order"></div>
     </section>
@@ -152,7 +180,8 @@
 
     <!-- Indehaveren: produktkatalog og indstillinger (FK23, §14) -->
     <section class="tab" id="tab-catalog">
-      <div class="grid wide">
+      <div class="card" id="catalog-locked"><p>Log ind under <strong>Ordrekø (operatør)</strong> for at redigere produktkatalog og indstillinger.</p></div>
+      <div class="grid wide" id="catalog-area" hidden>
         <div class="card">
           <h2>Produkter</h2>
           <form id="product-form">
@@ -191,7 +220,8 @@
       </div>
     </section>
 
-    <details class="card">
+    <!-- Kun til udvikling og eksamensdemo: vises med ?debug=1 i adressen -->
+    <details class="card" id="debug-panel" hidden>
       <summary>Seneste JSON-svar fra API'et</summary>
       <pre id="last-response" class="json">Ingen kald endnu</pre>
     </details>

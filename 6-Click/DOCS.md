@@ -10,7 +10,7 @@ Kravgrundlag: [`Kravspecifikation.md`](Kravspecifikation.md)
 
 | Skærm | Funktion |
 |---|---|
-| **Bestil print** | Fem trin (§11): **1 Upload** (JPEG/PNG/TIFF med miniature, filstørrelse og pixelmål, eller *Brug eksempelbilleder*) → **2 Vælg format** (størrelse, overflade, kvalitet, beskæring, rotation i trin på 90° og antal med live DPI og pris) → **3 Kurv** → **4 Oplysninger og betaling** (afhentning/forsendelse, samtykke og simuleret betaling, der kan afvises) → **5 Kvittering** |
+| **Bestil print** | Fem trin (§11): **1 Upload** (JPEG/PNG/TIFF med miniature, filstørrelse og pixelmål, eller *Brug eksempelbilleder*) → **2 Vælg format** (størrelse, overflade, kvalitet, beskæring, rotation i trin på 90° og antal med live DPI og pris for hvert billede, og én *Læg i kurven*-knap for alle) → **3 Kurv** → **4 Oplysninger og betaling** (afhentning/forsendelse, samtykke og simuleret betaling, der kan afvises) → **5 Kvittering** |
 | **Min ordre** | Find ordren med ordrenummer og adgangsnøgle, se status og indhold (indsigt) og *Slet mine billeder* (sletning på anmodning) |
 | **Ordrekø (operatør)** | Log ind med PIN. Køen er sorteret efter ønsket færdigdato og kan filtreres på papirrullebredde. *Ordreseddel* grupperet efter rulle, *Frigiv til print* (printjob til C8), *Markér klar* (kunden får besked) og *Afhentet*. Ordresedlen kan udskrives |
 | **Produktkatalog** | CRUD for produkter (format, mål, papirrulle, overflade, kvalitet, pris), indstillinger (DPI-tærskel, opbevaring, fragt, produktionsdage) og de mest bestilte formater |
@@ -26,15 +26,15 @@ Kravgrundlag: [`Kravspecifikation.md`](Kravspecifikation.md)
 | FK6/FK7 Beskæring og rotation i 90°-trin | `order_line.crop` (fyld, tilpas med kant, helt til kant) og `order_line.rotation` |
 | FK8 Effektiv DPI og advarsel under tærsklen | `effective_dpi()` følger procesbeskrivelsen 2.4.3 (mm → tommer, pixels ÷ tommer, laveste akse). Tærsklen `dpi_threshold` (150) er en indstilling. Advarslen blokerer ikke og forklarer konsekvensen |
 | FK9 Pris pr. ordrelinje og samlet | `validate_line()` og `POST /api/quote` til live pris. `order_view()` giver subtotal, fragt og total |
-| FK10/FK11 Levering, navn, e-mail og telefon | `POST /api/orders/<id>/checkout` (adresse kræves ved forsendelse) |
+| FK10/FK11 Levering, navn, e-mail og telefon | `POST /api/orders/<id>/checkout`. E-mail skal have domæne, telefon valideres efter landekode (+45 = 8 cifre). Ved forsendelse kræves vej, 4-cifret postnummer og by |
 | FK12/FK13 Betalingsbekræftelse og produktionskø | `POST /api/orders/<id>/payment` (simuleret udbyder). Godkendt → `MODTAGET` med `desired_ready` |
 | FK14/FK15 Kø sorteret efter færdigdato og filter på rulle | `GET /api/queue?roll_width=` |
 | FK16/FK17 Ordreseddel grupperet efter papirrullebredde | `GET /api/orders/<id>/slip` med stregkode, kunde og `roll_groups` (færre rulleskift) |
 | FK18 Printjob til C8 | `POST /api/orders/<id>/release` gemmer et JSON-printjob i `print_job`. Formatet er et antaget forslag, fordi det er et åbent punkt (§18) |
-| FK19/FK20 Status modtaget → i produktion → klar → afhentet | `PUT /api/orders/<id>/status`, ét trin ad gangen |
+| FK19/FK20 Status modtaget → i produktion → klar → afhentet | `PUT /api/orders/<id>/status`, ét trin ad gangen. Modtaget → i produktion sker kun via *Frigiv til print*, så printjobbet altid oprettes |
 | FK21 Underret kunden, når ordren er klar | Statusskift til `KLAR` giver en besked og sætter `notified_at` |
-| FK22 Automatisk sletning efter opbevaringsperioden | `purge_images()` (hændelse 10) kører hver gang køen åbnes og kan køres manuelt |
-| FK23 Indehaveren redigerer priser og formater | CRUD `/api/products` og `/api/settings`, uden kodeændring (§14) |
+| FK22 Automatisk sletning efter opbevaringsperioden | `purge_images()` (hændelse 10) kører hver gang køen åbnes og kan køres manuelt. Billeder slettes `retention_days` efter afhentning, og ubetalte kurve slettes helt efter `cart_retention_days` |
+| FK23 Indehaveren redigerer priser og formater | CRUD `/api/products` og `/api/settings`, uden kodeændring (§14). Ændringer og `/api/stats` kræver operatørlogin, læsning er åben for kundefladen |
 | §15 Billeder kun via ordre-id + tilfældig nøgle, operatørlogin, ingen kortdata | `customer_order()` kræver `?key=` (403). `current_operator()` kræver login (401). Betalingen sker hos udbyderen |
 | §17 Samtykke, oplyst opbevaring, indsigt og sletning | `consent_at`, teksten i trin 4, *Min ordre* og `DELETE /api/orders/<id>/images` |
 
@@ -213,7 +213,7 @@ flowchart LR
 | `backend/schema.sql` · `seed.sql` | Data | Tabeller og fiktive testdata |
 
 Alle fejl returneres som JSON (`{"error": "…", "path": "/api/…"}`) med statuskode 400, 401, 403, 404 eller 409 og vises som en rød besked i frontenden.
-Nederst på siden kan man åbne **"Seneste JSON-svar fra API'et"** og se den rå dataudveksling.
+Åbnes siden med `?debug=1` (fx `http://localhost:5206/?debug=1`), vises **"Seneste JSON-svar fra API'et"** nederst med den rå dataudveksling. Kunderne ser den ikke.
 Den fulde endepunktsliste står i [`backend/README.md`](backend/README.md).
 
 ## Design og responsivitet
@@ -227,11 +227,11 @@ Den fulde endepunktsliste står i [`backend/README.md`](backend/README.md).
 ## Testdata og testbrugere
 
 40 produkter (10 størrelser × blank/silke × standard/høj). Operatører: **Martin (indehaver)** med PIN `1234` og **Deltidsansat** med PIN `0000`.
-To betalte ordrer i køen: ordre 1 (Grethe, afhentning, nøgle `demo-grethe`) og ordre 2 (Ali, forsendelse, i produktion, nøgle `demo-ali`).
+To betalte ordrer i køen: ordre 1 (Grethe, afhentning, nøgle `DEMO-GRETHE`) og ordre 2 (Ali, forsendelse, i produktion, nøgle `DEMO-ALI`).
 *Brug eksempelbilleder* uploader tre billeder, hvoraf det ene har for lav opløsning til store formater.
 
 ## Afgrænsning
 
 Selve billedfilen gemmes ikke. Prototypen gemmer metadata og en lille miniature (i virkeligheden filstorage med reference fra `image`).
 TIFF-miniaturer vises kun i browsere, der kan læse TIFF (Safari). Betaling, SMS/e-mail og aflevering til C8/DL600 er simuleret, og C8-formatet er et åbent punkt.
-Operatørlogin er en simpel PIN uden sessioner. Ingen kundekonto (§26 Waiting room).
+Operatørlogin er en simpel PIN uden sessioner: `X-User-Id` kan sendes uden PIN, og kunden kan selv kalde det simulerede betalingssvar. Begge dele skal erstattes af rigtige sessioner og en signeret callback fra betalingsudbyderen før drift. Ingen kundekonto (§26 Waiting room).

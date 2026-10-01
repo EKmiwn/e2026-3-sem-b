@@ -2,6 +2,7 @@
 INSERT INTO setting (key, value, description) VALUES
   ('dpi_threshold', 150, 'Advarsel under denne effektive DPI (§6.2.4)'),
   ('retention_days', 30, 'Dage billedfiler gemmes efter afhentning (§17 – åbent punkt 6)'),
+  ('cart_retention_days', 1, 'Dage en ubetalt kurv med billeder og kontaktoplysninger gemmes (§17)'),
   ('shipping_price', 49, 'Fragt i kr. ved forsendelse'),
   ('production_days', 2, 'Hverdage fra modtagelse til ønsket færdig');
 
@@ -20,14 +21,16 @@ ORDER BY w, h, s, q DESC;
 INSERT INTO operator (name, pin) VALUES ('Martin (indehaver)', '1234'), ('Deltidsansat', '0000');
 
 INSERT INTO customer (name, email, phone, created_at) VALUES
-  ('Grethe Hansen', 'grethe@test.dk', '20304050', '2026-09-28 10:00:00'),
-  ('Ali Yilmaz', 'ali@test.dk', '31415926', '2026-09-29 19:30:00');
+  ('Grethe Hansen', 'grethe@test.dk', '+45 20304050', '2026-09-28 10:00:00'),
+  ('Ali Yilmaz', 'ali@test.dk', '+45 31415926', '2026-09-29 19:30:00');
+
+UPDATE customer SET address = 'Fjordvej 7, 9000 Aalborg' WHERE id = 2;
 
 INSERT INTO photo_order (access_key, customer_id, status, delivery, payment_status, payment_ref, consent_at, total,
                          created_at, received_at, desired_ready) VALUES
-  ('demo-grethe', 1, 'MODTAGET', 'AFHENTNING', 'BETALT', 'PAY-10001', '2026-09-28 10:05:00', 44,
+  ('DEMO-GRETHE', 1, 'MODTAGET', 'AFHENTNING', 'BETALT', 'PAY-10001', '2026-09-28 10:05:00', 44,
    '2026-09-28 10:00:00', '2026-09-28 10:06:00', '2026-09-30'),
-  ('demo-ali', 2, 'I_PRODUKTION', 'FORSENDELSE', 'BETALT', 'PAY-10002', '2026-09-29 19:35:00', 265,
+  ('DEMO-ALI', 2, 'I_PRODUKTION', 'FORSENDELSE', 'BETALT', 'PAY-10002', '2026-09-29 19:35:00', 265,
    '2026-09-29 19:30:00', '2026-09-29 19:36:00', '2026-10-01');
 
 INSERT INTO image (order_id, filename, file_type, px_width, px_height, file_size, orientation, uploaded_at) VALUES
