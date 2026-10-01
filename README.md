@@ -50,15 +50,57 @@ Prototyper med roller (Habitus, &LIVING, Click, DYNACAP, Clever, Elevevaluering 
 
 ## Kør lokalt
 
+Kræver Python 3.10 eller nyere. Kommandoerne køres fra projektets `backend`-mappe, fx `1-Movia/backend`.
+
+### Mac og Linux (Terminal)
+
 ```bash
 cd 1-Movia/backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python app.py                  # åbn http://localhost:5201
+python3 -m venv .venv                # første gang
+source .venv/bin/activate
+pip install -r requirements.txt      # første gang
+python app.py                        # åbn http://localhost:5201
 ```
 
-Databasen oprettes med testdata ved første start. Nulstil den med `python database.py --reset`.
-Er porten optaget, bruger serveren automatisk den næste ledige og skriver adressen i terminalen.
+### Windows (PowerShell)
+
+```powershell
+cd 1-Movia\backend
+py -m venv .venv                     # første gang
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt      # første gang
+python app.py                        # åbn http://localhost:5201
+```
+
+Giver `Activate.ps1` fejlen *"running scripts is disabled on this system"*, så tillad lokale scripts én gang med
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` og prøv igen.
+
+### Windows (Kommandoprompt / cmd)
+
+```bat
+cd 1-Movia\backend
+py -m venv .venv
+.venv\Scripts\activate.bat
+pip install -r requirements.txt
+python app.py
+```
+
+Er `py` ikke fundet, så installér Python fra [python.org](https://www.python.org/downloads/) og sæt flueben i *"Add python.exe to PATH"*. Brug derefter `python` i stedet for `py`.
+
+### Gælder for alle
+
+- Databasen oprettes med testdata ved første start. Nulstil den med `python database.py --reset`, mens serveren er stoppet.
+- Stop serveren med `Ctrl` + `C`. Deaktivér det virtuelle miljø med `deactivate`.
+- Er porten optaget, bruger serveren automatisk den næste ledige og skriver adressen i terminalen.
+- **11-Hovedstadens-Letbane på Windows:** Windows har ikke tidszonedata indbygget. Kør `pip install tzdata` én gang, så tiderne vises i dansk tid (`Europe/Copenhagen`). Uden pakken bruges maskinens egen tidszone.
+
+| Opgave | Mac og Linux | Windows (PowerShell) | Windows (cmd) |
+|---|---|---|---|
+| Vælg selv port | `PORT=5300 python app.py` | `$env:PORT=5300; python app.py` | `set PORT=5300 && python app.py` |
+| Se hvad der bruger porten | `lsof -nP -iTCP:5201 -sTCP:LISTEN` | `Get-NetTCPConnection -LocalPort 5201` | `netstat -ano \| findstr :5201` |
+| Stop en glemt server | `lsof -t -iTCP:5201 -sTCP:LISTEN \| xargs kill` | `Stop-Process -Id <PID>` | `taskkill /PID <PID> /F` |
+
+Kommandoerne i hvert projekts `DOCS.md` er skrevet til Mac og Linux. På Windows bruges `\` i stier og `.venv\Scripts\` i stedet for `.venv/bin/`.
 
 ## Deployment
 
