@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bispebjerg Akutmodtagelse – Digital registrering</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>:root { --brand: #00538a; --brand-dark: #003a61; --brand-soft: #e3eef6; }</style>
+  <style>
+    /* Patientsiderne: stor, letlæselig tekst og store knapper (afsnit 10) */
+    .patient { max-width: 720px; margin: 0 auto; font-size: 1.1rem; }
+    .patient label { font-size: 1rem; color: var(--text); font-weight: 600; }
+    .patient input, .patient select, .patient textarea { padding: 12px; font-size: 1.05rem; }
+    .patient button.big { padding: 16px 20px; font-size: 1.15rem; }
+    .patient .check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; }
+    .patient .check input { width: 22px; height: 22px; flex: none; margin-top: 3px; }
+    .lang button { min-width: 64px; }
+    .pain { display: flex; align-items: center; gap: 14px; }
+    .pain input { flex: 1; padding: 0; }
+    .pain output { font-size: 1.8rem; font-weight: 700; color: var(--brand-dark); min-width: 2ch; text-align: right; }
+    .reg-number { font-size: 2.4rem; font-weight: 700; letter-spacing: 0.06em; color: var(--brand-dark); margin: 4px 0; }
+    .steps { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+    .steps li { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); color: var(--muted); }
+    .steps li.done { background: #e3f3e4; border-color: #e3f3e4; color: var(--ok); }
+    .steps li.current { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+    .triage { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; color: #fff; }
+    .triage.red { background: #c62828; } .triage.orange { background: #e2711d; } .triage.yellow { background: #f2c230; color: #3d3000; }
+    .triage.green { background: #2e7d32; } .triage.blue { background: #1e63b0; } .triage.none { background: #eceeed; color: var(--muted); }
+    dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 12px; }
+    dl.facts dt { color: var(--muted); font-size: 0.85rem; }
+    dl.facts dd { margin: 0; }
+    .checks label { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; color: var(--text); }
+  </style>
+</head>
+<body data-api-port="5212">
+  <header>
+    <div>
+      <h1>Bispebjerg Akutmodtagelse</h1>
+      <p>Digital registrering af symptomer før og ved ankomst</p>
+    </div>
+    <label style="color:#fff">Personale – logget ind som
+      <select id="user-select"></select>
+    </label>
+  </header>
+
+  <nav class="tabs">
+    <button class="active" data-tab="register">Patient: Registrér</button>
+    <button data-tab="status">Patient: Min status</button>
+    <button data-tab="queue">Patientkø <span id="queue-count"></span></button>
+    <button data-tab="exams">Undersøgelser <span id="exam-count"></span></button>
+    <button data-tab="overview">Overblik</button>
+    <button data-tab="admin">Opsætning</button>
+  </nav>
+
+  <main>
+    <!-- Patient: registrering af symptomer (FR1, FR2) -->
+    <section class="tab active" id="tab-register">
+      <div class="patient">
+        <div class="actions lang" style="justify-content:flex-end;margin-bottom:10px">
+          <button class="secondary" data-lang="da">Dansk</button>
+          <button class="secondary" data-lang="en">English</button>
+        </div>
+        <div class="card">
+          <h2 data-i18n="registerTitle"></h2>
+          <p class="muted" data-i18n="registerIntro"></p>
+          <form id="register-form">
+            <div class="row">
+              <label><span data-i18n="name"></span> <input name="name" required autocomplete="name"></label>
+              <label><span data-i18n="birthDate"></span> <input name="birth_date" type="date" required></label>
+            </div>
+            <label><span data-i18n="where"></span>
+              <select name="registered_from">
+                <option value="VED_ANKOMST" data-i18n="whereHere"></option>
+                <option value="HJEMMEFRA" data-i18n="whereHome"></option>
+              </select>
+            </label>
+            <label><span data-i18n="symptoms"></span>
+              <textarea name="symptoms" required data-i18n-placeholder="symptomsHint"></textarea>
+            </label>
+            <label><span data-i18n="injuryType"></span> <select name="injury_type" id="injury-select"></select></label>
+            <label><span data-i18n="pain"></span>
+              <span class="pain"><input name="pain_level" type="range" min="0" max="10" value="5" data-number><output id="pain-output">5</output></span>
+            </label>
+            <label><span data-i18n="medication"></span> <input name="medication" data-i18n-placeholder="noneHint"></label>
+            <label><span data-i18n="allergies"></span> <input name="allergies" data-i18n-placeholder="noneHint"></label>
+            <label class="check"><input type="checkbox" name="consent" required> <span data-i18n="consent"></span></label>
+            <button class="big" data-i18n="submit"></button>
+          </form>
+        </div>
+        <div class="card highlight" id="register-result" hidden></div>
+      </div>
+    </section>
+
+    <!-- Patient: status i forløbet og opdatering af oplysninger (FR8, FR9) -->
+    <section class="tab" id="tab-status">
+      <div class="patient">
+        <div class="actions lang" style="justify-content:flex-end;margin-bottom:10px">
+          <button class="secondary" data-lang="da">Dansk</button>
+          <button class="secondary" data-lang="en">English</button>
+        </div>
+        <div class="card">
+          <h2 data-i18n="statusTitle"></h2>
+          <form id="lookup-form">
+            <div class="row">
+              <label><span data-i18n="regNumber"></span> <input name="reg_number" required placeholder="BBH-1234"></label>
+              <label><span data-i18n="birthDate"></span> <input name="birth_date" type="date" required></label>
+            </div>
+            <button class="big" data-i18n="lookup"></button>
+          </form>
+          <p class="muted" data-i18n="lookupHint"></p>
+        </div>
+        <div id="patient-status"></div>
+      </div>
+    </section>
+
+    <!-- Personale: patientkø og patientprofil (FR3, FR4, FR7) -->
+    <section class="tab" id="tab-queue">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Patientkø</h2>
+          <div id="queue-table"></div>
+        </div>
+        <div class="card" id="patient-detail"><p class="empty">Vælg en patient i køen.</p></div>
+      </div>
+    </section>
+
+    <!-- Bestilte undersøgelser pr. afdeling (FR6) -->
+    <section class="tab" id="tab-exams">
+      <div class="card">
+        <h2 id="exams-title">Bestilte undersøgelser</h2>
+        <div id="exam-table"></div>
+      </div>
+    </section>
+
+    <!-- Overblik og logning -->
+    <section class="tab" id="tab-overview">
+      <div class="kpis" id="stats-kpis"></div>
+      <p class="muted" id="stats-assumption"></p>
+      <div class="grid wide">
+        <div class="card">
+          <h2>Patienter pr. status</h2>
+          <div id="status-table"></div>
+        </div>
+        <div class="card">
+          <h2>Log over adgang til patientdata</h2>
+          <div id="log-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CRUD -->
+    <section class="tab" id="tab-admin">
+      <div class="grid wide">
+        <div class="card">
+          <h2>Undersøgelser</h2>
+          <form id="exam-type-form">
+            <input type="hidden" name="id">
+            <div class="row">
+              <label>Navn <input name="name" required></label>
+              <label>Udføres af <select name="department_id" data-number required></select></label>
+            </div>
+            <div class="actions"><button>Gem undersøgelse</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="exam-type-table"></div>
+        </div>
+        <div class="card">
+          <h2>Afdelinger</h2>
+          <form id="department-form">
+            <input type="hidden" name="id">
+            <label>Navn <input name="name" required></label>
+            <div class="actions"><button>Gem afdeling</button><button type="button" class="secondary" data-reset>Nulstil</button></div>
+          </form>
+          <div id="department-table"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card">
+      <summary>Seneste JSON-svar fra API'et</summary>
+      <pre id="last-response" class="json">Ingen kald endnu</pre>
+    </details>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

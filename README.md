@@ -17,6 +17,7 @@ Hver gruppemappe indeholder en prototype bygget ud fra gruppens kravspecifikatio
 | 9 | GreenMobility FAMILY | Familieabonnement, booking, GreenCredits og forecast til flådeplacering | 5209 | [DOCS](9-GreenMobility-FAMILY/DOCS.md) · [API](9-GreenMobility-FAMILY/backend/README.md) |
 | 10 | Elevevaluering | Læringsrum 2.0: elever vurderer trivsel og møbler, lærere ser resultater og udvikling over tid | 5210 | [DOCS](10-Elevevaluering/DOCS.md) · [API](10-Elevevaluering/backend/README.md) |
 | 11 | Hovedstadens Letbane | Rejseassistent: afgangstavle, rejsesøgning, driftsmeddelelser, favoritter og feedback | 5211 | [DOCS](11-Hovedstadens-Letbane/DOCS.md) · [API](11-Hovedstadens-Letbane/backend/README.md) |
+| 12 | Bispebjerg Akutmodtagelse | Digital registrering: symptomer før/ved ankomst, registreringsnummer, patientstatus, triage og undersøgelser sendt til afdelinger (dansk/engelsk) | 5212 | [DOCS](12-Bispebjerg-Akut/DOCS.md) · [API](12-Bispebjerg-Akut/backend/README.md) |
 
 - **`DOCS.md`** beskriver prototypen: krav, forretningsregler, ER-diagram og testdata.
 - **`backend/README.md`** viser alle API-endepunkter.
@@ -45,7 +46,7 @@ Alle prototyper er bygget ens, og strukturen er den samme:
 Hovedstadens Letbane bruger string-id'er fra gruppens data dictionary (fx `"HER"` og `"L-SYD"`) og har derfor egne endepunkter i stedet for `register_crud()`. `core.py` og `database.py` er stadig de fælles filer.
 
 Flask serverer frontenden på `/` og API'et på `/api/...` fra samme adresse.
-Prototyper med roller (Habitus, &LIVING, Click, Clever, Elevevaluering og Letbanens personale) bruger et simuleret login, hvor den valgte bruger sendes i en header (`X-User-Id` eller `X-Personale-Id`).
+Prototyper med roller (Habitus, &LIVING, Click, Clever, Elevevaluering, Letbanens personale og Bispebjergs personale) bruger et simuleret login, hvor den valgte bruger sendes i en header (`X-User-Id` eller `X-Personale-Id`).
 
 ## Kør lokalt
 
@@ -132,4 +133,4 @@ Kommandoerne i hvert projekts `DOCS.md` er skrevet til Mac og Linux. På Windows
 ## Deployment
 
 Prototyperne er ikke deployet endnu. De kan køre på DigitalOcean på samme måde som Hold A (Gunicorn som systemd-service pr. projekt med skabelonen `gunicorn@.service`).
-Brug fx portene `:8101` til `:8111`, så de ikke kolliderer med Hold A's `:8001` til `:8011`.
+Brug fx portene `:8101` til `:8112`, så de ikke kolliderer med Hold A's `:8001` til `:8011`.
