@@ -1,6 +1,6 @@
 # Movia – Den Forudsigelige Rejse – prototype
 
-Appen foreslår den roligste afgang ud fra støj- og trængselsdata fra bussens sensorer. Den sender et diskret digitalt solsikkesignal til chaufføren, når passageren stiger på, og guider rejsen med en visuel tidslinje og tryghedsnotifikationer. Den viser også, om bussen har en fysisk rolig zone.
+Appen foreslår den roligste afgang ud fra støj- og trængselsdata fra bussens sensorer. Den sender et diskret digitalt solsikkesignal til chaufføren, når passageren stiger på, og guider rejsen med en visuel tidslinje og tryghedsnotifikationer. Den viser også, om bussen har en fysisk rolig zone. En rejseguide med stemme (`POST /api/assistant`) taler med passageren og guider gennem rejsen og appen. Linjerne er 2A, 4A, 5C, 150S, 250S og 350S.
 
 Kravgrundlag: [`../Kravspecifikation.md`](../Kravspecifikation.md)
 
@@ -33,7 +33,7 @@ backend/
   seed.sql          fiktive testdata
   requirements.txt
 frontend/
-  index.html        skærmbilleder: Planlæg rejse · Min rejse · Chauffør · Sensordata · Profil og feedback
+  index.html        skærmbilleder: Planlæg · Min rejse · Profil · Rejseguide (stemme) · Chauffør og Movia-data (demo)
   style.css         fælles stylesheet (projektfarver står i index.html)
   api.js            fælles klient: fetch() + JSON og små DOM-hjælpere
   app.js            præsentationslag for netop dette projekt
@@ -48,6 +48,7 @@ Fejl returneres altid som JSON: `{"error": "…", "path": "/api/…"}` med statu
 
 | Metode | Endepunkt | Beskrivelse |
 | --- | --- | --- |
+| `POST` | `/api/assistant` | Rejseguiden: modtager det, passageren siger eller skriver, og svarer i klart sprog. Kan finde den roligste rejse, gemme den, tjekke passageren ind, fortælle hvor langt der er igen og forklare appen. action fortæller frontenden, hvad der skal vises. |
 | `GET` | `/api/buses` | Hent liste (filtrér med ?felt=værdi) (CRUD) |
 | `POST` | `/api/buses` | Opret (CRUD) |
 | `GET` | `/api/buses/<bus_id>/signals` | Chaufførens skærm: aktive solsikkesignaler – kun token og stop, aldrig navn (NFR2, NFR4). |
@@ -60,6 +61,7 @@ Fejl returneres altid som JSON: `{"error": "…", "path": "/api/…"}` med statu
 | `GET` | `/api/journeys` | Søg afgange mellem to stop og foreslå den roligste (sensordata) blandt de næste afgange. |
 | `GET` | `/api/lines` | Hent liste (filtrér med ?felt=værdi) (CRUD) |
 | `GET` | `/api/lines/<item_id>` | Hent én (CRUD) |
+| `GET` | `/api/lines/<line_id>/stops` | Linjens stoppesteder i rækkefølge med køretid fra første stop. |
 | `GET` | `/api/passengers` | Hent liste (filtrér med ?felt=værdi) (CRUD) |
 | `POST` | `/api/passengers` | Opret (CRUD) |
 | `DELETE` | `/api/passengers/<item_id>` | Slet (CRUD) |

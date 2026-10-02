@@ -5,7 +5,7 @@ CREATE TABLE stop (
     name TEXT NOT NULL UNIQUE
 );
 
--- S-buslinje med fast rækkefølge af stoppesteder
+-- Buslinje (A-, C- eller S-bus) med fast rækkefølge af stoppesteder
 CREATE TABLE line (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     name        TEXT NOT NULL UNIQUE,
@@ -53,6 +53,7 @@ CREATE TABLE passenger (
     name              TEXT NOT NULL,
     school            TEXT,
     sunflower_enabled INTEGER NOT NULL DEFAULT 1 CHECK (sunflower_enabled IN (0, 1)),
+    voice_guide       INTEGER NOT NULL DEFAULT 1 CHECK (voice_guide IN (0, 1)),      -- rejseguiden læser beskeder højt
     notify_stops_before INTEGER NOT NULL DEFAULT 1 CHECK (notify_stops_before BETWEEN 1 AND 3)
 );
 

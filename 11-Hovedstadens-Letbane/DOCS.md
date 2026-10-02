@@ -1,9 +1,10 @@
 # Hovedstadens Letbane – rejseassistent – dokumentation af prototypen
 
-En **mobil-først web-app** (arbejdstitel *Letbane-rejseassistent*, PendlerKids), der gør Letbanen til et **forudsigeligt** transportvalg.
+En **mobil-først web-app** (*Hovedstadens Letbane*, PendlerKids), der gør Letbanen til et **forudsigeligt** transportvalg.
 Den viser **afgange** i begge retninger med planlagt og forventet tid, **forsinkelser og aflysninger** (farve **og** tekst). Den finder **rejser** mellem to stationer med rejsetid og **skift** til S-tog og bus.
 Aktive **driftsmeddelelser** vises med **alternativ rejse**. Pendleren kan gemme **favoritrejser uden konto** og få **besked** ved kritiske forstyrrelser.
-**Personalet** udsender driftsmeddelelser og får en **feedbackrapport**.
+Passageren kan **købe billet** til den planlagte rejse, **følge letbanen live** på kort og optjene **point**, der kan bruges på **belønninger**.
+Appen er kun til passagerer. Personalets funktioner (driftsmeddelelser og feedbackrapport) findes stadig i API'et, men har ingen skærm i appen.
 
 Kravgrundlag: [`kravspec.md`](kravspec.md). Navne, id'er, typer og JSON-felter følger **data dictionary** (afsnit 5), og endepunkterne i **afsnit 9.2** findes med præcis de navne.
 
@@ -11,14 +12,31 @@ Kravgrundlag: [`kravspec.md`](kravspec.md). Navne, id'er, typer og JSON-felter f
 
 | Skærm | Funktion |
 |---|---|
-| **Forside** | Notifikationer om kritiske forstyrrelser på egne rejser, favoritrejser med næste afgang og status (1 tryk – G-1) og aktive driftsmeddelelser (KRITISK først) |
-| **Afgange** | Vælg station → næste afgange mod Ishøj og mod Lyngby med tid, status (✓ til tiden / ⚠ +n min / ✕ aflyst) og minutter til afgang, elevator og cykelparkering, skiftemuligheder med gangtid og "Opdateret kl." (hentes igen hvert 30. sekund) |
-| **Rejse** | Fra, til og tidspunkt → afgang og ankomst med status, rejsetid, aflyste afgange, alternativ rejse, skift ved ankomststationen og *Gem som favorit* |
+| **Forside** | Rejseplanlægger øverst (fra, til, tidspunkt – som hos DSB og Rejseplanen), samlede point med fremskridtslinje mod næste belønning, to kort (standard og satellit) med egen placering, stationer og tog i drift, gyldige billetter, favoritrejser med næste afgang og status og aktive driftsmeddelelser (KRITISK først) |
+| **Afgange** | Vælg station → næste afgange mod Ishøj og mod Lyngby med tid, status (✓ til tiden / ⚠ +n min / ✕ aflyst), minutter til afgang og 📡 *følg live*, elevator og cykelparkering, skiftemuligheder med gangtid og "Opdateret kl." (hentes igen hvert 30. sekund) |
+| **Rejse** | Fra, til og tidspunkt → afgang og ankomst med status, rejsetid, aflyste afgange, alternativ rejse, skift ved ankomststationen, *Køb billet*, *Følg letbanen live* og *Gem som favorit* |
+| **Billetter** | Købte billetter med status (gyldig, brugt, udløbet), gyldighed og kontrolkode. *Afslut rejse* giver 10 point og beskeden "+10 point – godt gået!" |
+| **Live** | Stort kort (standard eller satellit), der viser alle letbanetog i drift. Positionerne hentes hvert 5. sekund. Listen viser næste station, ankomst og status for hvert tog |
+| **Belønninger** | Point og fremskridtslinje, belønninger (250 point → gratis billet, 500 → rejsekredit på 50 kr., 1.000 → gratis rejser i en uge), indløste belønninger og de seneste point |
 | **Feedback** | Vurdering 1–5, emne (punktlighed, information, plads, skift, andet) og kommentar |
 | **Indstillinger** | Dansk/engelsk, stor tekst, samtykke til notifikationer, *Mine data* (hvad gemmes og hvorfor) og *Slet mine data* |
-| **Personale** | Punktlighed i dag, udsend driftsmeddelelse (type, alvorlighed, tekst på dansk og engelsk, alternativ rejse, berørte stationer og varighed), afslut meddelelser og ugentlig feedbackrapport |
 
-Knapperne *English/Dansk* og *A+* i toppen skifter sprog og tekststørrelse.
+Knapperne *English/Dansk* og *A+* i toppen skifter sprog og tekststørrelse. *⭐ point* i toppen åbner belønningerne.
+
+## Ændringer efter ønske fra gruppen
+
+| Ønske | Implementering |
+|---|---|
+| Forside som DSB og Rejseplanen med to kort (satellit og standard), der viser egen placering og kan zoomes | Rejseplanlæggeren `#home-trip-form` øverst. Kortene tegnes med Leaflet (`createMap()` i `app.js`): OpenStreetMap som standardkort og Esri World Imagery som satellitkort. `locate()` henter enhedens placering og centrerer begge kort på den. Tryk på en station åbner dens afgangstavle |
+| Grønt farvetema | `--brand: #00843d`, `--brand-dark` og `--brand-soft` i `index.html` |
+| Overskriften "Hovedstadens Letbane" | `<h1>` og `<title>` i `index.html` |
+| Køb billet efter planlagt rejse | Knappen *Køb billet* i rejseresultatet. `GET /api/billetpris` og `POST /api/billetter`. Betaling med kort eller MobilePay er simuleret. Rejsekredit og gratis billetter fra belønningerne kan også bruges |
+| Point og belønninger | `POST /api/billetter/{id}/afslut` giver 10 point (`point_transaktion`). `GET /api/brugere/{id}/point` giver saldo, næste belønning og `fremskridt_pct`. `POST /api/brugere/{id}/indloesninger` bruger point |
+| Live tracker | `GET /api/live` beregner hvert togs position mellem forrige og næste stop ud fra `forventet_ankomst`. Kortene henter positionerne hvert 5. sekund |
+| Ingen personalefane | Fanen og dens kode er fjernet fra `index.html` og `app.js`. Endepunkterne for personale er bevaret til en separat platform |
+
+**Forretningsregler for billetter og point:** Prisen er 12 kr. pr. zone for voksne (halv pris for børn) og mindst 2 zoner: 2 zoner for de første 3 stop og derefter én zone pr. 3 stop. Billetten gælder i 60 minutter plus 15 minutter pr. zone.
+En billet giver point én gang, når rejsen afsluttes, og kun mens den er gyldig. En gratis billet gælder for én person. Rejsekredit skal dække hele prisen. Point trækkes, når en belønning indløses.
 
 ## Fra krav til kode
 
@@ -79,6 +97,14 @@ erDiagram
     STATION ||--o{ FAVORITREJSE : "fra_station_id"
     STATION ||--o{ FAVORITREJSE : "til_station_id"
     BRUGER ||--o{ FEEDBACK : "bruger_id"
+    BRUGER ||--o{ BILLET : "bruger_id"
+    STATION ||--o{ BILLET : "fra_station_id"
+    STATION ||--o{ BILLET : "til_station_id"
+    BRUGER ||--o{ INDLOESNING : "bruger_id"
+    BELOENNING ||--o{ INDLOESNING : "beloenning_id"
+    BRUGER ||--o{ POINT_TRANSAKTION : "bruger_id"
+    BILLET ||--o{ POINT_TRANSAKTION : "billet_id"
+    INDLOESNING ||--o{ POINT_TRANSAKTION : "indloesning_id"
     STATION {
         TEXT station_id PK
         TEXT navn
@@ -187,7 +213,51 @@ erDiagram
         TEXT sprog
         INTEGER stor_tekst
         INTEGER notifikationer_til
+        INTEGER rejsekredit_kr
+        INTEGER gratis_billetter
         TEXT oprettet
+    }
+    BILLET {
+        TEXT billet_id PK
+        TEXT bruger_id FK
+        TEXT fra_station_id FK
+        TEXT til_station_id FK
+        TEXT afgang_id
+        TEXT billettype
+        INTEGER antal
+        INTEGER zoner
+        INTEGER pris_kr
+        TEXT betalingsmetode
+        TEXT kontrolkode
+        TEXT koebt_tid
+        TEXT gyldig_til
+        TEXT brugt_tid
+    }
+    BELOENNING {
+        TEXT beloenning_id PK
+        TEXT type
+        TEXT navn_da
+        TEXT navn_en
+        TEXT beskrivelse_da
+        TEXT beskrivelse_en
+        INTEGER pris_point
+        INTEGER vaerdi_kr
+    }
+    INDLOESNING {
+        TEXT indloesning_id PK
+        TEXT bruger_id FK
+        TEXT beloenning_id FK
+        TEXT kode
+        TEXT tidspunkt
+    }
+    POINT_TRANSAKTION {
+        TEXT transaktion_id PK
+        TEXT bruger_id FK
+        INTEGER point
+        TEXT type
+        TEXT billet_id FK
+        TEXT indloesning_id FK
+        TEXT tidspunkt
     }
     FAVORITREJSE {
         TEXT favorit_id PK
@@ -274,6 +344,9 @@ Terminalen skriver ` * Åbn http://localhost:5211`. Åbn adressen i browseren. F
 | ` * Port 5211 er optaget – bruger port …` | En anden proces, ofte en glemt server, bruger porten | Brug den adresse, der står i terminalen. Se hvad der optager porten med `lsof -nP -iTCP:5211 -sTCP:LISTEN`. En Flask-server i debug-tilstand er to processer, så stop dem begge med `lsof -t -iTCP:5211 -sTCP:LISTEN \| xargs kill` |
 | `ModuleNotFoundError: No module named 'flask'` | Det virtuelle miljø er ikke aktiveret, eller Flask er ikke installeret | `source .venv/bin/activate` og `pip install -r requirements.txt` |
 | Siden viser "Kan ikke hente data fra backenden" | Serveren kører ikke, eller `index.html` er åbnet direkte fra disken, mens serveren kører på en anden port | Start serveren og åbn adressen fra terminalen i stedet for filen |
+| `no such column: rejsekredit_kr` eller `no such table: billet` | `database.db` er oprettet før billetter, point og belønninger blev tilføjet | Stop serveren og kør `python database.py --reset` |
+| Kortene er tomme eller grå | Kortene henter Leaflet og kortfliser fra internettet | Tjek internetforbindelsen. Resten af appen virker uden |
+| Kortene viser Herlev St. som placering | Browseren har ikke fået lov til at bruge placeringen | Tillad placering for siden og tryk *Min placering* |
 | Tallene passer ikke efter mange tests | Databasen indeholder testdata fra tidligere afprøvninger | Stop serveren og kør `python database.py --reset` |
 | `no such table …` | `database.db` er tom eller ødelagt | `python database.py --reset` |
 
@@ -299,7 +372,7 @@ flowchart LR
 | Fil | Lag | Indhold |
 |---|---|---|
 | `frontend/index.html` | Præsentation | Skærmbilleder som faneblade og formularer. Projektets farver og `data-api-port` |
-| `frontend/app.js` | Præsentation | Henter data med `api()`, tegner dem i DOM'en og sender formularer |
+| `frontend/app.js` | Præsentation | Henter data med `api()`, tegner dem i DOM'en og sender formularer. Tegner kortene med Leaflet (hentes fra unpkg.com) |
 | `frontend/api.js` | Præsentation | Fælles for alle prototyper: `api()` (fetch + JSON), `h()`, `renderTable()`, `fillSelect()`, `formToJson()`, `bindCrudForm()` og `toast()` |
 | `frontend/style.css` | Præsentation | Fælles responsivt design |
 | `backend/app.py` | Logik | Projektets forretningsregler og endepunkter |
@@ -323,9 +396,13 @@ Den fulde endepunktsliste står i [`backend/README.md`](backend/README.md).
 
 12 stationer fra Lyngby St. til Ishøj St. (fiktive koder og koordinater, antagelse A-3), 2 ruter (`L-SYD` og `L-NORD`, ca. 55 min), 12 letbanetog og 13 skifteforbindelser til S-tog A/B/C/E, bus og regionaltog.
 Driftsmeddelelser dateret i forhold til nu: **M-8812** (KRITISK aflysning Herlev–Glostrup de næste 90 min med alternativ rejse), **M-8790** (INFO sporarbejde) og en afsluttet fra i går.
-Demo-brugeren "Joan" har stor tekst, notifikationer og favoritten "Til arbejde" (Lyngby St. → Glostrup St.). Personale: `P-044` trafikleder, `P-101` kundeservice og `P-012` togfører (må ikke udsende meddelelser).
+Demo-brugeren "Joan" har stor tekst, notifikationer, favoritten "Til arbejde" (Lyngby St. → Glostrup St.) og **240 point**, så den næste afsluttede rejse giver point nok til en gratis billet. Tre belønninger: `B-250`, `B-500` og `B-1000`.
+Personale (kun i API'et): `P-044` trafikleder, `P-101` kundeservice og `P-012` togfører (må ikke udsende meddelelser).
 
 ## Afgrænsning
 
 Ingen live-integration med Rejseplanen, GTFS-RT eller DOT (C-5). Skifteforbindelser har gangtid, men ingen afgangstider for S-tog og bus (BR-4 kan derfor ikke beregnes).
-Ingen push-tjeneste (notifikationer vises i appen), intet billetkøb og intet MitID-login (uden for scope). Personalefanen er synlig for alle, men backenden kræver personale-id.
+Ingen push-tjeneste (notifikationer vises i appen) og intet MitID-login (uden for scope).
+Billetkøbet er simuleret: der er ingen rigtig betaling, takster og zoner er fiktive, og billetten kan ikke bruges i den rigtige trafik. Appen kan ikke kontrollere, at rejsen faktisk er gennemført, så point gives, når brugeren trykker *Afslut rejse*.
+Live-positionerne er beregnet ud fra den simulerede køreplan og ikke hentet fra togenes GPS. Stationernes koordinater er fiktive (antagelse A-3), så linjen ligger ikke præcist på kortet.
+Den grønne farve er valgt efter øjemål og er ikke hentet fra Hovedstadens Letbanes designmanual. Appen har ingen personalefane. Driftsmeddelelser oprettes via API'et.

@@ -1,6 +1,6 @@
 # Hovedstadens Letbane – rejseassistent – prototype
 
-Mobil-først web-app til pendlere: afgangstavle for begge retninger med planlagt og forventet tid, forsinkelse og aflysning, rejsesøgning med rejsetid og skift til S-tog og bus, aktive driftsmeddelelser med alternativ rejse, favoritrejser uden konto og notifikation ved kritiske forstyrrelser, feedback, dansk/engelsk og stor tekst. Personalet udsender driftsmeddelelser. Navne, id'er og JSON-felter følger data dictionary i kravspec.md (afsnit 5), og endepunkterne i afsnit 9.2 findes med samme navne. Driftsdata er simulerede (C-5).
+Mobil-først web-app til pendlere: afgangstavle for begge retninger med planlagt og forventet tid, forsinkelse og aflysning, rejsesøgning med rejsetid og skift til S-tog og bus, aktive driftsmeddelelser med alternativ rejse, favoritrejser uden konto og notifikation ved kritiske forstyrrelser, feedback, dansk/engelsk og stor tekst. Forsiden har rejseplanlægger og to kort (standard og satellit) med egen placering. Passageren kan købe billet til den planlagte rejse, følge letbanen live og optjene point til belønninger. Personalets endepunkter findes kun i API'et. Navne, id'er og JSON-felter følger data dictionary i kravspec.md (afsnit 5), og endepunkterne i afsnit 9.2 findes med samme navne. Driftsdata er simulerede (C-5).
 
 Kravgrundlag: [`../kravspec.md`](../kravspec.md)
 
@@ -28,11 +28,11 @@ backend/
   app.py            logiklag: forretningsregler og endepunkter for netop dette projekt
   core.py           fælles for alle prototyper: Flask-app, JSON-fejl, CORS og generisk CRUD
   database.py       fælles for alle prototyper: SQLite3-forbindelse og hjælpefunktioner
-  schema.sql        tabeller: station, rute, rutestop, skinnestraekning, koeretoej, afgang, stoptid, personale, vagt, driftsmeddelelse (+ _station, _afgang), transportmiddel, skifteforbindelse, bruger, favoritrejse, feedback
+  schema.sql        tabeller: station, rute, rutestop, skinnestraekning, koeretoej, afgang, stoptid, personale, vagt, driftsmeddelelse (+ _station, _afgang), transportmiddel, skifteforbindelse, bruger, favoritrejse, feedback, billet, beloenning, indloesning, point_transaktion
   seed.sql          fiktive testdata
   requirements.txt
 frontend/
-  index.html        skærmbilleder: Forside · Afgange · Rejse · Feedback · Indstillinger · Personale
+  index.html        skærmbilleder: Forside · Afgange · Rejse · Billetter · Live · Belønninger · Feedback · Indstillinger
   style.css         fælles stylesheet (projektfarver står i index.html)
   api.js            fælles klient: fetch() + JSON og små DOM-hjælpere
   app.js            præsentationslag for netop dette projekt
@@ -47,13 +47,20 @@ Fejl returneres altid som JSON: `{"error": "…", "path": "/api/…"}` med statu
 
 | Metode | Endepunkt | Beskrivelse |
 | --- | --- | --- |
+| `GET` | `/api/beloenninger` | De belønninger, point kan bruges på – billigste først. |
+| `GET` | `/api/billetpris` | Zoner, gyldighed og pris pr. billettype for en rejse. ?fra=&til= |
+| `POST` | `/api/billetter` | Køb billet til en planlagt rejse. Betales med kort, MobilePay, rejsekredit eller en gratis billet fra belønningerne. |
+| `POST` | `/api/billetter/<billet_id>/afslut` | Afslut rejsen på en gyldig billet. Billetten bliver brugt, og brugeren optjener 10 point. |
 | `POST` | `/api/brugere` | Opretter en anonym bruger. bruger_id genereres som UUID – ingen navn eller e-mail (D-3). |
 | `DELETE` | `/api/brugere/<bruger_id>` | Slet brugeren og alle tilknyttede data (GDPR). |
 | `GET` | `/api/brugere/<bruger_id>` | Brugerens indstillinger. |
 | `PUT` | `/api/brugere/<bruger_id>` | Sprog (da/en), stor tekst og samtykke til notifikationer. |
+| `GET` | `/api/brugere/<bruger_id>/billetter` | Brugerens billetter – nyeste først. status er GYLDIG, BRUGT eller UDLOEBET. |
 | `GET` | `/api/brugere/<bruger_id>/data` | S-4: brugeren kan se, hvilke data der gemmes, og hvorfor. |
 | `GET` | `/api/brugere/<bruger_id>/favoritter` | Favoritrejser med næste afgang og status – status på favoritrejse på højst 2 tryk (G-1, U-2). |
+| `POST` | `/api/brugere/<bruger_id>/indloesninger` | Brug point på en belønning: gratis billet, rejsekredit eller en større belønning med kode. |
 | `GET` | `/api/brugere/<bruger_id>/notifikationer` | Notifikation = bruger_id + meddelelse_id + titel_da + (favorit_id) for KRITISKE meddelelser på favoritrejser (BR-5). |
+| `GET` | `/api/brugere/<bruger_id>/point` | Brugerens point, fremskridt mod næste belønning, indløste belønninger og de seneste 20 bevægelser. |
 | `GET` | `/api/driftsmeddelelser` | Liste af Driftsmeddelelse. ?aktive=true giver kun de aktive – KRITISK først. |
 | `POST` | `/api/driftsmeddelelser` | Personale opretter en driftsmeddelelse (S-2). AFLYSNING markerer berørte afgange som aflyst. KRITISK udløser notifikation til brugere med berørte favoritrejser (BR-5). |
 | `PUT` | `/api/driftsmeddelelser/<meddelelse_id>/afslut` | Personale afslutter en driftsmeddelelse nu. Aflysninger for resten af dagen ophæves. |
@@ -62,6 +69,7 @@ Fejl returneres altid som JSON: `{"error": "…", "path": "/api/…"}` med statu
 | `POST` | `/api/feedback` | Feedbackindsendelse = (bruger_id) + (afgang_id) + vurdering + kategori + (kommentar). |
 | `GET` | `/api/feedback/rapport` | Ugentlig feedbackrapport til personalet (BE-8): antal og gennemsnit pr. kategori de seneste 7 dage. |
 | `GET` | `/api/health` | Systemstatus |
+| `GET` | `/api/live` | Positionen for alle letbanetog i drift lige nu, beregnet mellem forrige og næste stop ud fra forventet ankomst. |
 | `GET` | `/api/personale` | Personale til det simulerede personale-login – kun id og rolle, aldrig navn (D-4). |
 | `GET` | `/api/rejse` | Rejseforslag = {Rejseben} + samlet_rejsetid_min + (Driftsmeddelelse). ?fra=&til=&tid= (ISO eller HH:MM). |
 | `GET` | `/api/stationer` | Liste af Station med tilgængelighed (elevator og cykelparkering). |

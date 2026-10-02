@@ -131,6 +131,8 @@ CREATE TABLE bruger (
     sprog              TEXT NOT NULL DEFAULT 'da' CHECK (sprog IN ('da', 'en')),
     stor_tekst         INTEGER NOT NULL DEFAULT 0 CHECK (stor_tekst IN (0, 1)),
     notifikationer_til INTEGER NOT NULL DEFAULT 0 CHECK (notifikationer_til IN (0, 1)),
+    rejsekredit_kr     INTEGER NOT NULL DEFAULT 0 CHECK (rejsekredit_kr >= 0),      -- fra indløste belønninger
+    gratis_billetter   INTEGER NOT NULL DEFAULT 0 CHECK (gratis_billetter >= 0),    -- fra indløste belønninger
     oprettet           TEXT NOT NULL
 );
 
@@ -151,4 +153,53 @@ CREATE TABLE feedback (
     kategori    TEXT NOT NULL CHECK (kategori IN ('PUNKTLIGHED', 'INFORMATION', 'PLADS', 'SKIFT', 'ANDET')),
     kommentar   TEXT CHECK (kommentar IS NULL OR length(kommentar) <= 300),
     tidspunkt   TEXT NOT NULL
+);
+
+-- Billet købt i appen (betalingen er simuleret). Status beregnes: BRUGT, hvis brugt_tid er sat – UDLOEBET efter gyldig_til
+CREATE TABLE billet (
+    billet_id       TEXT PRIMARY KEY,
+    bruger_id       TEXT NOT NULL REFERENCES bruger(bruger_id) ON DELETE CASCADE,
+    fra_station_id  TEXT NOT NULL REFERENCES station(station_id),
+    til_station_id  TEXT NOT NULL REFERENCES station(station_id),
+    afgang_id       TEXT,                           -- den planlagte afgang – bruges til at følge letbanen live
+    billettype      TEXT NOT NULL CHECK (billettype IN ('VOKSEN', 'BARN')),
+    antal           INTEGER NOT NULL CHECK (antal BETWEEN 1 AND 9),
+    zoner           INTEGER NOT NULL CHECK (zoner >= 2),
+    pris_kr         INTEGER NOT NULL CHECK (pris_kr >= 0),
+    betalingsmetode TEXT NOT NULL CHECK (betalingsmetode IN ('KORT', 'MOBILEPAY', 'REJSEKREDIT', 'GRATIS_BILLET')),
+    kontrolkode     TEXT NOT NULL,
+    koebt_tid       TEXT NOT NULL,
+    gyldig_til      TEXT NOT NULL,
+    brugt_tid       TEXT                            -- sættes, når rejsen afsluttes og giver point
+);
+
+-- Belønninger, som point kan bruges på
+CREATE TABLE beloenning (
+    beloenning_id  TEXT PRIMARY KEY,
+    type           TEXT NOT NULL CHECK (type IN ('GRATIS_BILLET', 'REJSEKREDIT', 'STOR')),
+    navn_da        TEXT NOT NULL,
+    navn_en        TEXT NOT NULL,
+    beskrivelse_da TEXT NOT NULL,
+    beskrivelse_en TEXT NOT NULL,
+    pris_point     INTEGER NOT NULL CHECK (pris_point > 0),
+    vaerdi_kr      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE indloesning (
+    indloesning_id TEXT PRIMARY KEY,
+    bruger_id      TEXT NOT NULL REFERENCES bruger(bruger_id) ON DELETE CASCADE,
+    beloenning_id  TEXT NOT NULL REFERENCES beloenning(beloenning_id),
+    kode           TEXT,                            -- kun for belønninger, der vises frem (type STOR)
+    tidspunkt      TEXT NOT NULL
+);
+
+-- Optjente (+) og brugte (–) point. Brugerens saldo er summen
+CREATE TABLE point_transaktion (
+    transaktion_id TEXT PRIMARY KEY,
+    bruger_id      TEXT NOT NULL REFERENCES bruger(bruger_id) ON DELETE CASCADE,
+    point          INTEGER NOT NULL,
+    type           TEXT NOT NULL CHECK (type IN ('REJSE', 'INDLOESNING')),
+    billet_id      TEXT REFERENCES billet(billet_id) ON DELETE SET NULL,
+    indloesning_id TEXT REFERENCES indloesning(indloesning_id) ON DELETE SET NULL,
+    tidspunkt      TEXT NOT NULL
 );

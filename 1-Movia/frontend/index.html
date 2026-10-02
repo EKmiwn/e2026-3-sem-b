@@ -9,42 +9,94 @@
   <!-- Roligt, lav-stimuli udtryk: afdæmpede farver og god luft (afsnit 4.1) -->
   <style>:root { --brand: #3f6372; --brand-dark: #2c4652; --brand-soft: #e7eff2; --bg: #f4f6f6; }</style>
   <style>
-    .option { display: grid; gap: 6px; }
-    .option .time { font-size: 1.4rem; font-weight: 700; color: var(--brand-dark); }
+    /* Enkel brugerflade: én kolonne, stor tekst, store knapper og én ting ad gangen */
+    body { font-size: 1.08rem; }
+    main { max-width: 760px; }
+    body.demo main { max-width: 1200px; }
+    button { min-height: 48px; }
+    button.small { min-height: 36px; }
+    .big { font-size: 1.15rem; padding: 16px 18px; width: 100%; }
+    label { font-size: 1rem; color: var(--text); font-weight: 600; }
+    input, select, textarea { padding: 12px; }
+    .card h2 { font-size: 1.25rem; }
+    .demo-only { display: none !important; }
+    body.demo .demo-only { display: revert !important; }
+    body.demo .tabs .demo-only { display: inline-block !important; }
+    body.demo section.tab.demo-only { display: none !important; }
+    body.demo section.tab.demo-only.active { display: block !important; }
+    details.more { margin-top: 12px; }
+    details.more > summary { cursor: pointer; font-weight: 600; color: var(--brand-dark); padding: 10px 0; }
+    footer { max-width: 760px; margin: 0 auto; padding: 0 16px 110px; }
+
+    /* Anbefalet rejse */
+    .best .time { font-size: 2rem; font-weight: 800; color: var(--brand-dark); line-height: 1.2; }
+    .best p { margin: 6px 0; }
     .level-ROLIG { background: #e3f3e4; color: var(--ok); }
     .level-MIDDEL { background: #fff1d6; color: var(--warn); }
     .level-TRAVL { background: #fde4e4; color: var(--danger); }
-    .heat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .heat div { border-radius: var(--radius); padding: 12px; text-align: center; }
+    .heat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+    .heat div { border-radius: var(--radius); padding: 10px; text-align: center; }
     .heat strong { display: block; }
-    .timeline { list-style: none; margin: 0; padding: 0; }
+    .other { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .other:last-child { border-bottom: none; }
+    .other .time { font-weight: 700; font-size: 1.15rem; }
+
+    /* Min rejse */
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 16px; }
+    .steps div { text-align: center; padding: 10px 6px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-weight: 600; }
+    .steps .done { background: var(--brand-soft); color: var(--brand-dark); border-color: var(--brand-soft); }
+    .steps .now { background: var(--brand); color: #fff; border-color: var(--brand); }
+    .message { background: var(--brand-soft); border-radius: var(--radius); padding: 16px; font-size: 1.25rem; font-weight: 600; color: var(--brand-dark); margin-bottom: 12px; }
+    .timeline { list-style: none; margin: 0 0 12px; padding: 0; }
     .timeline li { display: grid; grid-template-columns: 24px 60px 1fr; gap: 10px; align-items: center; padding: 10px 0; }
     .timeline .dot { width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--border); margin: 0 auto; }
     .timeline .PASSERET { color: var(--muted); }
     .timeline .PASSERET .dot { background: var(--border); }
     .timeline .HER .dot { background: var(--brand); border-color: var(--brand); }
     .timeline .HER { font-weight: 700; }
-    .big { font-size: 1.05rem; padding: 14px 16px; }
+    .rating { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+    .rating button { background: var(--surface); color: var(--text); border-color: var(--border); font-size: 1.5rem; }
+    .rating button.chosen { background: var(--brand); border-color: var(--brand); }
+    .check { display: flex; gap: 10px; align-items: center; font-weight: 400; }
+    .check input { width: 22px; height: 22px; }
     .signal { font-size: 1.2rem; padding: 18px; border-radius: var(--radius); background: #fff6d8; border: 2px solid #e7c14a; }
+
+    /* Rejseguiden: stemmeassistent */
+    #guide-button { position: fixed; right: 16px; bottom: 16px; z-index: 5; border-radius: 999px; padding: 14px 20px; font-size: 1.1rem; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25); }
+    #guide { position: fixed; right: 16px; bottom: 16px; z-index: 6; width: min(400px, calc(100% - 32px)); max-height: min(620px, calc(100% - 32px));
+             display: grid; grid-template-rows: auto 1fr auto auto; background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3); overflow: hidden; }
+    #guide header { padding: 12px 14px; }
+    #guide header h2 { margin: 0; font-size: 1.1rem; }
+    #guide-log { overflow-y: auto; padding: 12px; display: grid; gap: 8px; align-content: start; min-height: 140px; }
+    .bubble { padding: 10px 12px; border-radius: 14px; max-width: 88%; line-height: 1.4; }
+    .bubble.guide { background: var(--brand-soft); color: var(--brand-dark); justify-self: start; }
+    .bubble.me { background: var(--brand); color: #fff; justify-self: end; }
+    #guide-chips { display: flex; gap: 6px; overflow-x: auto; padding: 0 12px 8px; }
+    #guide-chips button { white-space: nowrap; flex: none; }
+    #guide-form { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; padding: 10px 12px 12px; border-top: 1px solid var(--border); }
+    #mic-button { font-size: 1.3rem; min-width: 56px; }
+    #mic-button.listening { background: var(--danger); border-color: var(--danger); animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { box-shadow: 0 0 0 10px rgba(198, 40, 40, 0.15); } }
   </style>
 </head>
 <body data-api-port="5201">
   <header>
     <div>
       <h1>🌻 Den Forudsigelige Rejse</h1>
-      <p>Movia · roligste rute, digitalt solsikkesignal og visuel tidslinje</p>
+      <p>Movia · en rolig og tryg busrejse</p>
     </div>
-    <label style="color:#fff">Passager
+    <label style="color:#fff;font-weight:400">Passager
       <select id="passenger-select"></select>
     </label>
   </header>
 
   <nav class="tabs">
-    <button class="active" data-tab="plan">Planlæg rejse</button>
-    <button data-tab="trip">Min rejse</button>
-    <button data-tab="driver">Chauffør</button>
-    <button data-tab="sensors">Sensordata</button>
-    <button data-tab="profile">Profil og feedback</button>
+    <button class="active" data-tab="plan">1 · Planlæg</button>
+    <button data-tab="trip">2 · Min rejse</button>
+    <button data-tab="profile">Profil</button>
+    <button class="demo-only" data-tab="driver">Chauffør</button>
+    <button class="demo-only" data-tab="sensors">Movia-data</button>
   </nav>
 
   <main>
@@ -53,29 +105,62 @@
       <div class="card">
         <h2>Hvor skal du hen?</h2>
         <form id="search-form">
-          <div class="row">
-            <label>Fra <select name="from_stop_id" required></select></label>
-            <label>Til <select name="to_stop_id" required></select></label>
+          <label>Jeg rejser fra <select name="from_stop_id" required></select></label>
+          <label>Jeg skal til <select name="to_stop_id" required></select></label>
+          <details class="more" style="margin-top:0">
+            <summary>Vælg et andet tidspunkt end nu</summary>
             <label>Tidspunkt <input type="time" name="time"></label>
-          </div>
+          </details>
           <button class="big">Find rolig rejse</button>
         </form>
       </div>
       <div id="recommendation"></div>
-      <div class="grid" id="options"></div>
-      <div id="heatmap"></div>
+      <div id="options"></div>
     </section>
 
     <!-- P4: Guid rejsen -->
     <section class="tab" id="tab-trip">
-      <div class="card">
-        <label>Rejse <select id="trip-select"></select></label>
-      </div>
-      <div id="trip-view"><p class="empty">Vælg en afgang under "Planlæg rejse".</p></div>
+      <div id="trip-view"><p class="empty">Du har ikke valgt en rejse endnu. Gå til Planlæg.</p></div>
+      <details class="more card">
+        <summary>Mine andre rejser</summary>
+        <label>Vis rejse <select id="trip-select"></select></label>
+      </details>
     </section>
 
-    <!-- P3: Chaufførens skærm -->
-    <section class="tab" id="tab-driver">
+    <!-- Profil (FR6) -->
+    <section class="tab" id="tab-profile">
+      <div class="card">
+        <h2>Min profil</h2>
+        <form id="profile-form">
+          <input type="hidden" name="id">
+          <label>Navn <input name="name" required></label>
+          <label>Uddannelsessted <input name="school"></label>
+          <label>Solsikkesignal til chaufføren
+            <select name="sunflower_enabled" data-number>
+              <option value="1">Til – chaufføren får besked, når jeg stiger på</option>
+              <option value="0">Fra</option>
+            </select>
+          </label>
+          <label>Rejseguiden læser beskeder højt
+            <select name="voice_guide" data-number>
+              <option value="1">Til</option>
+              <option value="0">Fra – kun tekst</option>
+            </select>
+          </label>
+          <label>Giv mig besked
+            <select name="notify_stops_before" data-number>
+              <option value="1">1 stop før jeg skal af</option>
+              <option value="2">2 stop før</option>
+              <option value="3">3 stop før</option>
+            </select>
+          </label>
+          <div class="actions"><button>Gem profil</button><button type="button" class="secondary demo-only" data-reset>Ny passager</button></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- P3: Chaufførens skærm (demo) -->
+    <section class="tab demo-only" id="tab-driver">
       <div class="card">
         <label>Chaufførens bus <select id="bus-select"></select></label>
         <p class="muted">Signalet viser kun en kode og et stop – aldrig passagerens navn eller diagnose.</p>
@@ -83,8 +168,8 @@
       <div id="driver-signals"></div>
     </section>
 
-    <!-- P2: Sensordata -->
-    <section class="tab" id="tab-sensors">
+    <!-- P2: Sensordata og feedback til Movia (demo) -->
+    <section class="tab demo-only" id="tab-sensors">
       <div class="kpis" id="stats-kpis"></div>
       <div class="card">
         <div class="toolbar">
@@ -92,6 +177,16 @@
           <button id="simulate-button" class="secondary">Simulér nye sensormålinger</button>
         </div>
         <div id="fleet-table"></div>
+      </div>
+      <div class="grid wide">
+        <div class="card">
+          <h2>Linjer og stoppesteder</h2>
+          <div id="line-table"></div>
+        </div>
+        <div class="card">
+          <h2>Feedback fra rejser</h2>
+          <div id="feedback-table"></div>
+        </div>
       </div>
       <div class="card">
         <h2>Registrér måling manuelt</h2>
@@ -105,43 +200,40 @@
       </div>
     </section>
 
-    <!-- Profil (FR6) og feedback (FR7) -->
-    <section class="tab" id="tab-profile">
-      <div class="grid wide">
-        <div class="card">
-          <h2>Min profil</h2>
-          <form id="profile-form">
-            <input type="hidden" name="id">
-            <label>Navn <input name="name" required></label>
-            <label>Uddannelsessted <input name="school"></label>
-            <label>Digitalt solsikkesignal
-              <select name="sunflower_enabled" data-number>
-                <option value="1">Slået til – chaufføren får besked, når jeg stiger på</option>
-                <option value="0">Slået fra</option>
-              </select>
-            </label>
-            <label>Giv mig besked
-              <select name="notify_stops_before" data-number>
-                <option value="1">1 stop før jeg skal af</option>
-                <option value="2">2 stop før</option>
-                <option value="3">3 stop før</option>
-              </select>
-            </label>
-            <div class="actions"><button>Gem profil</button><button type="button" class="secondary" data-reset>Ny passager</button></div>
-          </form>
-        </div>
-        <div class="card">
-          <h2>Feedback fra rejser</h2>
-          <div id="feedback-table"></div>
-        </div>
-      </div>
-    </section>
-
-    <details class="card">
+    <details class="card demo-only">
       <summary>Seneste JSON-svar fra API'et</summary>
       <pre id="last-response" class="json">Ingen kald endnu</pre>
     </details>
   </main>
+
+  <footer>
+    <button class="small secondary" id="demo-button">Vis demo-skærme (chauffør og Movia-data)</button>
+  </footer>
+
+  <!-- Rejseguiden: taler med brugeren og guider gennem rejsen og appen -->
+  <button id="guide-button">🎙 Rejseguide</button>
+  <aside id="guide" hidden aria-label="Rejseguide">
+    <header>
+      <h2>🎙 Rejseguide</h2>
+      <div class="actions">
+        <button class="small secondary" id="voice-button" title="Slå oplæsning til eller fra">🔊 Læser højt</button>
+        <button class="small secondary" id="guide-close" aria-label="Luk rejseguiden">✕</button>
+      </div>
+    </header>
+    <div id="guide-log" aria-live="polite"></div>
+    <div id="guide-chips">
+      <button class="small secondary" data-say="Hjælp mig med denne side">Hjælp mig</button>
+      <button class="small secondary" data-say="Hvor langt er der igen?">Hvor langt igen?</button>
+      <button class="small secondary" data-say="Jeg er steget på">Jeg er steget på</button>
+      <button class="small secondary" data-say="Hvor er der roligt i bussen?">Hvor er der roligt?</button>
+      <button class="small secondary" data-say="Hvad er solsikkesignalet?">Solsikkesignal</button>
+    </div>
+    <form id="guide-form">
+      <button type="button" id="mic-button" title="Tal til rejseguiden" aria-label="Tal til rejseguiden">🎤</button>
+      <input name="message" placeholder="Tal eller skriv – fx: til Nørreport" autocomplete="off" aria-label="Besked til rejseguiden">
+      <button>Send</button>
+    </form>
+  </aside>
 
   <div id="toast" class="toast"></div>
   <script src="api.js"></script>

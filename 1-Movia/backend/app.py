@@ -1,10 +1,13 @@
 """Movia – Den Forudsigelige Rejse. Flask API (logiklag).
 
+Rejseguiden (POST /api/assistant) er en stemmeassistent: browseren omsætter tale til tekst og læser svaret højt.
+
 Kravgrundlag: ../Kravspecifikation.md
 Kør:  pip install -r requirements.txt  &&  python app.py  →  http://localhost:5201
 """
 import os
 import random
+import re
 import secrets
 from datetime import datetime
 
@@ -73,7 +76,8 @@ register_crud(app, "stops", "stop", fields=["name"], required=["name"], order_by
 register_crud(app, "lines", "line", fields=["name", "description"], read_only=True, order_by="name")
 register_crud(app, "buses", "bus", fields=["number", "line_id", "quiet_zone"], required=["number", "line_id"],
               update_fields=["quiet_zone"])
-register_crud(app, "passengers", "passenger", fields=["name", "school", "sunflower_enabled", "notify_stops_before"],
+register_crud(app, "passengers", "passenger",
+              fields=["name", "school", "sunflower_enabled", "voice_guide", "notify_stops_before"],
               required=["name"])
 register_crud(app, "sensor-readings", "sensor_reading", fields=["bus_id", "area", "noise_db", "crowding_pct"],
               required=["bus_id", "area", "noise_db", "crowding_pct"], defaults={"measured_at": now},
@@ -81,14 +85,12 @@ register_crud(app, "sensor-readings", "sensor_reading", fields=["bus_id", "area"
 
 
 # ---------------------------------------------------------------- P1 Planlæg rolig rejse (FR1, FR8)
-@app.get("/api/journeys")
-def search_journeys():
-    """Søg afgange mellem to stop og foreslå den roligste (sensordata) blandt de næste afgange."""
-    from_id, to_id = request.args.get("from_stop_id", type=int), request.args.get("to_stop_id", type=int)
+def find_journeys(from_id, to_id, wanted=None):
+    """De næste afgange mellem to stop. Den roligste (sensordata) er markeret med is_calmest."""
     if not from_id or not to_id or from_id == to_id:
         raise ApiError("Vælg to forskellige stoppesteder")
     from_stop, to_stop = get_or_404("stop", from_id, "Stoppested"), get_or_404("stop", to_id, "Stoppested")
-    wanted = request.args.get("time") or datetime.now().strftime("%H:%M")
+    wanted = wanted or datetime.now().strftime("%H:%M")
     try:
         to_minutes(wanted)
     except ValueError:
@@ -100,7 +102,7 @@ def search_journeys():
                                      JOIN line_stop b ON b.line_id = l.id AND b.stop_id = ?
                          WHERE a.seq < b.seq""", (from_id, to_id))
     if not lines:
-        raise ApiError(f"Ingen S-bus kører direkte fra {from_stop['name']} til {to_stop['name']}", 404)
+        raise ApiError(f"Ingen bus kører direkte fra {from_stop['name']} til {to_stop['name']}", 404)
 
     options = []
     for day_offset in (0, 1):        # efter sidste afgang vises morgendagens første afgange
@@ -125,10 +127,25 @@ def search_journeys():
     calmest = max(options, key=lambda o: (o["calm"]["expected_score"], -o["wait_min"]))
     for option in options:
         option["is_calmest"] = option is calmest
-    return jsonify(from_stop=from_stop["name"], to_stop=to_stop["name"], time=wanted,
-                   recommendation=f"Roligste rejse: {calmest['line']} kl. {calmest['leaves_at']}"
-                                  + (" – med rolig zone" if calmest["has_quiet_zone"] else ""),
-                   options=options)
+    return dict(from_stop_id=from_id, to_stop_id=to_id, from_stop=from_stop["name"], to_stop=to_stop["name"], time=wanted,
+                recommendation=f"Roligste rejse: {calmest['line']} kl. {calmest['leaves_at']}"
+                               + (" – med rolig zone" if calmest["has_quiet_zone"] else ""),
+                options=options)
+
+
+@app.get("/api/journeys")
+def search_journeys():
+    """Søg afgange mellem to stop og foreslå den roligste (sensordata) blandt de næste afgange."""
+    return jsonify(find_journeys(request.args.get("from_stop_id", type=int), request.args.get("to_stop_id", type=int),
+                                 request.args.get("time")))
+
+
+@app.get("/api/lines/<int:line_id>/stops")
+def line_stops(line_id):
+    """Linjens stoppesteder i rækkefølge med køretid fra første stop."""
+    get_or_404("line", line_id, "Linje")
+    return jsonify(query_all("""SELECT ls.seq, ls.minutes_from_start, s.id AS stop_id, s.name FROM line_stop ls
+                                JOIN stop s ON s.id = ls.stop_id WHERE ls.line_id = ? ORDER BY ls.seq""", (line_id,)))
 
 
 @app.get("/api/departures/<int:departure_id>/heatmap")
@@ -190,23 +207,27 @@ def passenger_trips(passenger_id):
                                 WHERE t.passenger_id = ? ORDER BY t.id DESC""", (passenger_id,)))
 
 
+def make_trip(passenger_id, departure_id, from_stop_id, to_stop_id):
+    get_or_404("passenger", passenger_id, "Passager")
+    dep = get_or_404("departure", departure_id, "Afgang")
+    seqs = {r["stop_id"]: r["seq"] for r in query_all("SELECT stop_id, seq FROM line_stop WHERE line_id = ?",
+                                                        (dep["line_id"],))}
+    if seqs.get(from_stop_id, 99) >= seqs.get(to_stop_id, 0):
+        raise ApiError("Afgangen kører ikke mellem de valgte stoppesteder i den retning")
+    with transaction() as db:
+        trip_id = db.execute("""INSERT INTO trip (passenger_id, departure_id, from_stop_id, to_stop_id, created_at)
+                                VALUES (?, ?, ?, ?, ?)""",
+                             (passenger_id, dep["id"], from_stop_id, to_stop_id, now())).lastrowid
+        notify(db, trip_id, "ROLIG_RUTE", f"Din rejse er gemt. Bussen kører kl. {dep['departs_at']} fra første stop.")
+    return trip_id
+
+
 @app.post("/api/trips")
 def create_trip():
     """Passageren vælger en afgang (AfgangValgt → RejseOprettet)."""
     data = json_body()
     require(data, "passenger_id", "departure_id", "from_stop_id", "to_stop_id")
-    get_or_404("passenger", data["passenger_id"], "Passager")
-    dep = get_or_404("departure", data["departure_id"], "Afgang")
-    seqs = {r["stop_id"]: r["seq"] for r in query_all("SELECT stop_id, seq FROM line_stop WHERE line_id = ?",
-                                                        (dep["line_id"],))}
-    if seqs.get(data["from_stop_id"], 99) >= seqs.get(data["to_stop_id"], 0):
-        raise ApiError("Afgangen kører ikke mellem de valgte stoppesteder i den retning")
-    with transaction() as db:
-        trip_id = db.execute("""INSERT INTO trip (passenger_id, departure_id, from_stop_id, to_stop_id, created_at)
-                                VALUES (?, ?, ?, ?, ?)""",
-                             (data["passenger_id"], dep["id"], data["from_stop_id"], data["to_stop_id"], now())).lastrowid
-        notify(db, trip_id, "ROLIG_RUTE", f"Din rejse er gemt. Bussen kører kl. {dep['departs_at']} fra første stop.")
-    return jsonify(trip_view(trip_id)), 201
+    return jsonify(trip_view(make_trip(data["passenger_id"], data["departure_id"], data["from_stop_id"], data["to_stop_id"]))), 201
 
 
 @app.get("/api/trips/<int:trip_id>")
@@ -218,6 +239,11 @@ def get_trip(trip_id):
 @app.post("/api/trips/<int:trip_id>/board")
 def board(trip_id):
     """Passageren tjekker ind ved boarding. Er solsikkesignalet slået til, sendes det diskret til chaufføren (FR3, FR6)."""
+    do_board(trip_id)
+    return jsonify(trip_view(trip_id))
+
+
+def do_board(trip_id):
     trip = get_or_404("trip", trip_id, "Rejse")
     if trip["status"] != "PLANLAGT":
         raise ApiError("Du er allerede steget på denne rejse", 409)
@@ -235,14 +261,13 @@ def board(trip_id):
                        (trip_id, dep["bus_id"], f"SOL-{secrets.token_hex(2).upper()}", stop["name"], now()))
             notify(db, trip_id, "SOLSIKKE_SENDT", "Chaufføren har fået et diskret solsikkesignal. Du behøver ikke sige noget.")
     advance_notifications(trip_id)
-    return jsonify(trip_view(trip_id))
 
 
 def advance_notifications(trip_id):
     """Sender tryghedsnotifikation, når passagerens stop nærmer sig (FR5)."""
     view = trip_view(trip_id)
     passenger = get_or_404("passenger", view["passenger_id"], "Passager")
-    destination = view["timeline"][-1]["name"]
+    destination = view["timeline"][-1]["name"].rstrip(".")       # "Nørreport St." efterfulgt af punktum giver ellers ".."
     left = view["stops_left"]
     already = {n["type"] for n in view["notifications"]}
     with transaction() as db:
@@ -284,6 +309,166 @@ def give_feedback(trip_id):
                       VALUES (?, ?, ?, ?, ?)""",
                    (trip_id, int(data["calm_rating"]), 1 if data.get("felt_safe") else 0, data.get("comment"), now()))
     return jsonify(trip_view(trip_id)), 201
+
+
+# ---------------------------------------------------------------- Rejseguide: stemmeassistent, der guider rejsen og appen
+# Prototypen genkender hensigten med nøgleord og svarer ud fra rejsens data. I et rigtigt produkt ville en sprogmodel
+# forstå talen – svarene skal stadig bygge på de samme data, så guiden aldrig gætter på tider og stop.
+STOP_ALIASES = {"hovedbanegården": "Københavns Hovedbanegård", "hovedbanen": "Københavns Hovedbanegård",
+                "lufthavnen": "Københavns Lufthavn", "kastrup": "Københavns Lufthavn", "dragør": "Dragør Stationsplads",
+                "gammel holte": "Gl. Holte", "rådhuspladsen": "Rådhuspladsen"}
+SCREEN_HELP = {
+    "plan": "Du er på Planlæg. Vælg hvor du rejser fra og til, og tryk på Find rolig rejse. Jeg viser den roligste bus øverst.",
+    "trip": "Du er på Min rejse. Her ser du stoppene på din rejse. Tryk på Jeg er steget på, når du er i bussen. Så siger jeg til, før du skal af.",
+    "profile": "Du er på Profil. Her vælger du, om chaufføren skal have et solsikkesignal, om jeg skal læse højt, og hvornår du vil have besked.",
+}
+QUIET_TEXT = {"FORREST": "forrest", "MIDTEN": "i midten", "BAGERST": "bagerst"}
+
+
+def said(text, *words):
+    return any(re.search(rf"(?<!\w){re.escape(w)}(?!\w)", text) for w in words)
+
+
+def stops_in_text(text):
+    """Stoppesteder nævnt i teksten, i den rækkefølge de bliver sagt. "st." og "københavns" kan udelades.
+    prep er ordet lige før stoppet ("fra" eller "til"), så "til Nørreport fra Husum" også forstås rigtigt."""
+    found = {}
+    for stop in query_all("SELECT * FROM stop"):
+        name = stop["name"].lower()
+        names = {name, name.replace(" st.", ""), name.replace("københavns ", "")}
+        names |= {alias for alias, target in STOP_ALIASES.items() if target == stop["name"]}
+        positions = [m.start() for n in names for m in re.finditer(rf"(?<!\w){re.escape(n)}(?!\w)", text)]
+        if positions:
+            found[stop["id"]] = (min(positions), stop)
+    return [{**stop, "prep": (text[:pos].split() or [""])[-1]} for pos, stop in sorted(found.values(), key=lambda x: x[0])]
+
+
+def trip_summary(trip):
+    """Kort status på rejsen i klart sprog."""
+    destination = trip["timeline"][-1]
+    zone = (f" Der er en rolig zone {QUIET_TEXT[trip['quiet_zone']]} i bussen." if trip["quiet_zone"] != "INGEN" else "")
+    if trip["status"] == "PLANLAGT":
+        first = trip["timeline"][0]
+        return (f"Din bus er linje {trip['line']}. Den kører fra {first['name']} klokken {first['time']}.{zone} "
+                "Sig til mig, når du er steget på.")
+    if trip["status"] == "OMBORD":
+        here = next((s["name"] for s in trip["timeline"] if s["state"] == "HER"), None)
+        left = trip["stops_left"]
+        return (f"Du er ved {here}. Der er {left} stop tilbage. Du skal af ved {destination['name']} klokken {destination['time']}. "
+                + ("Næste stop er dit. Tryk på stopknappen nu." if left == 1 else "Du kan sidde roligt. Jeg siger til i god tid."))
+    return f"Din rejse er slut. Du stod af ved {destination['name']}. Godt klaret."
+
+
+@app.post("/api/assistant")
+def assistant():
+    """Rejseguiden: modtager det, passageren siger eller skriver, og svarer i klart sprog. Kan finde den roligste rejse,
+    gemme den, tjekke passageren ind, fortælle hvor langt der er igen og forklare appen. action fortæller frontenden, hvad der skal vises."""
+    data = json_body()
+    require(data, "message")
+    text = " ".join(str(data["message"]).lower().split()).strip(" .!?")
+    passenger = get_or_404("passenger", data["passenger_id"], "Passager") if data.get("passenger_id") else None
+    trip = trip_view(data["trip_id"]) if data.get("trip_id") else None
+    if trip and passenger and trip["passenger_id"] != passenger["id"]:
+        trip = None
+    name = passenger["name"].split()[0] if passenger else ""
+    stops = stops_in_text(text)
+
+    def answer(intent, reply, **action):
+        return jsonify(intent=intent, reply=reply.replace("..", "."), action=action or None)   # "Nørreport St.." → "St."
+
+    # 1. Utryghed går forud for alt andet – ét roligt svar og det næste konkrete skridt
+    if said(text, "bange", "nervøs", "stresset", "utryg", "panik", "angst", "urolig", "overvældet"):
+        reply = "Det er helt okay. Træk vejret roligt. Du skal ikke gøre noget lige nu."
+        if trip and trip["status"] == "OMBORD":
+            reply += f" Der er {trip['stops_left']} stop tilbage, og jeg siger til, før du skal af."
+            if trip["signal"]:
+                reply += " Chaufføren har fået dit solsikkesignal og giver dig god tid."
+        return answer("TRYGHED", reply)
+
+    # 2. Tjek ind
+    if said(text, "steget på", "stået på", "tjek ind", "er på bussen", "sidder i bussen", "ombord"):
+        if not trip or trip["status"] != "PLANLAGT":
+            return answer("BOARDING", "Du har ingen planlagt rejse at stige på. Sig hvor du vil hen, så finder jeg en rolig bus.")
+        do_board(trip["id"])
+        trip = trip_view(trip["id"])
+        signal = " Chaufføren har fået et diskret solsikkesignal." if trip["signal"] else ""
+        return answer("BOARDING", f"Godt. Du er tjekket ind.{signal} {trip_summary(trip)}", type="TRIP_UPDATED", trip_id=trip["id"])
+
+    # 3. Ja tak til det foreslåede
+    suggestion = data.get("suggestion") or {}
+    if suggestion.get("departure_id") and said(text, "ja", "ja tak", "jo", "vælg", "gem", "den tager jeg", "okay", "ok", "fint"):
+        if not passenger:
+            raise ApiError("Vælg en passager først")
+        trip_id = make_trip(passenger["id"], suggestion["departure_id"], suggestion["from_stop_id"], suggestion["to_stop_id"])
+        return answer("VAELG_REJSE", "Rejsen er gemt. " + trip_summary(trip_view(trip_id)), type="TRIP_CREATED", trip_id=trip_id)
+    if suggestion.get("departure_id") and said(text, "nej", "nej tak", "ikke"):
+        return answer("AFVIS", "Okay. Jeg gemmer ikke rejsen. Du kan se de andre afgange på skærmen.")
+
+    # 4. Planlæg en rejse
+    if stops:
+        if len(stops) >= 2:
+            origin, target = stops[0], stops[1]
+            if origin["prep"] == "til" or target["prep"] == "fra":
+                origin, target = target, origin
+        elif stops[0]["prep"] == "fra":
+            return answer("PLANLAEG", f"Du rejser fra {stops[0]['name']}. Hvor vil du hen?")
+        elif data.get("from_stop_id") and data["from_stop_id"] != stops[0]["id"]:
+            origin, target = get_or_404("stop", data["from_stop_id"], "Stoppested"), stops[0]
+        else:
+            return answer("PLANLAEG", f"Du vil til {stops[0]['name']}. Hvor rejser du fra?")
+        try:
+            result = find_journeys(origin["id"], target["id"])
+        except ApiError as err:
+            return answer("PLANLAEG", f"{err.message}. Prøv et andet stoppested.")
+        best = next(o for o in result["options"] if o["is_calmest"])
+        zone = (f" Der er en rolig zone {QUIET_TEXT[best['calm']['quiet_zone']]} i bussen." if best["has_quiet_zone"]
+                else " Bussen har ingen rolig zone.")
+        level = {"ROLIG": "Der er roligt i bussen.", "MIDDEL": "Der er nogenlunde roligt i bussen.",
+                 "TRAVL": "Der er desværre travlt i alle busser lige nu."}[best["calm"]["level"]]
+        return answer("PLANLAEG",
+                      f"Den roligste bus er linje {best['line']} klokken {best['leaves_at']} fra {result['from_stop']}. "
+                      f"Du er fremme ved {result['to_stop']} klokken {best['arrives_at']}. {level}{zone} Skal jeg gemme rejsen?",
+                      type="SHOW_JOURNEY", from_stop_id=origin["id"], to_stop_id=target["id"], departure_id=best["departure_id"])
+
+    # 5. Hvor langt er der igen?
+    if said(text, "hvornår", "hvor langt", "hvor er jeg", "hvor er vi", "stop tilbage", "næste stop", "skal af", "stå af", "status", "min rejse", "fremme"):
+        if not trip:
+            return answer("STATUS", "Du har ikke valgt en rejse endnu. Sig hvor du vil hen, så finder jeg en rolig bus.")
+        return answer("STATUS", trip_summary(trip), type="OPEN_TAB", tab="trip")
+
+    # 6. Ro og siddeplads
+    if said(text, "rolig", "roligt", "roligst", "sidde", "larm", "støj", "plads", "fyldt", "mange mennesker"):
+        if trip and trip["status"] != "AFSLUTTET":
+            calm = bus_calm(query_one("SELECT b.* FROM bus b JOIN departure d ON d.bus_id = b.id WHERE d.id = ?", (trip["departure_id"],)))
+            best = max(calm["areas"], key=lambda a: a["score"])
+            return answer("ROLIGHED", f"Der er roligst {QUIET_TEXT[best['area']]} i bussen lige nu. Der er {best['crowding_pct']} procent fyldt."
+                          + (f" Den rolige zone er {QUIET_TEXT[calm['quiet_zone']]}." if calm["quiet_zone"] != "INGEN" else ""))
+        return answer("ROLIGHED", "Jeg finder altid den roligste bus til dig. Sig hvor du vil hen, så ser jeg på støj og trængsel i busserne.")
+
+    # 7. Solsikkesignal
+    if "solsikke" in text or "chauffør" in text:
+        on = passenger and passenger["sunflower_enabled"]
+        return answer("SOLSIKKE", "Solsikkesignalet er en diskret besked til chaufføren, når du stiger på. Chaufføren ser kun en kode, "
+                      "aldrig dit navn. Så får du ekstra tid, uden at du skal sige noget. "
+                      + ("Det er slået til hos dig." if on else "Det er slået fra hos dig. Du kan slå det til under Profil."))
+
+    # 8. Linjer
+    if said(text, "linje", "linjer", "busser", "hvilke", "hvor kører") or re.search(r"\b\d{1,3} ?[acs]\b", text):
+        lines = query_all("SELECT * FROM line ORDER BY id")
+        asked = next((l for l in lines if said(text, l["name"].lower(), f"{l['name'][:-1]} {l['name'][-1]}".lower())), None)
+        if asked:
+            names = [r["name"] for r in query_all("""SELECT s.name FROM line_stop ls JOIN stop s ON s.id = ls.stop_id
+                                                     WHERE ls.line_id = ? ORDER BY ls.seq""", (asked["id"],))]
+            return answer("LINJER", f"Linje {asked['name']} kører fra {names[0]} til {names[-1]}. Den stopper ved {', '.join(names[1:-1])}.")
+        return answer("LINJER", "Jeg kender linjerne " + ", ".join(l["name"] for l in lines) + ". Sig for eksempel: Hvor kører 5C?")
+
+    # 9. Hjælp til appen – afhænger af den skærm, passageren står på
+    if said(text, "tak", "mange tak"):
+        return answer("TAK", "Selv tak. Jeg er her hele vejen.")
+    greeting = f"Hej {name}. " if said(text, "hej", "hejsa", "goddag", "start") else ""
+    help_text = SCREEN_HELP.get(data.get("tab"), SCREEN_HELP["plan"])
+    return answer("HJAELP", f"{greeting}Jeg er din rejseguide. {help_text} Du kan også bare sige, hvor du vil hen. "
+                  "For eksempel: Jeg vil fra Husum Torv til Nørreport.")
 
 
 # ---------------------------------------------------------------- Chauffør (P3)

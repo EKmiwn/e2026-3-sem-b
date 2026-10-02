@@ -5,8 +5,11 @@ Kør:  pip install -r requirements.txt  &&  python app.py  →  http://localhost
 
 Alle id'er er strings (afsnit 5.7), så projektet bruger egne endepunkter i stedet for register_crud() fra core.py.
 Driftsdata er simulerede (C-5): afgange for driftsdøgnet oprettes ud fra køreplanen, og forsinkelser simuleres.
+Billetkøb, point og belønninger samt live-positioner er tilføjet efter ønske fra gruppen. Betalingen er simuleret.
 """
+import math
 import os
+import secrets
 import uuid
 import zlib
 from datetime import date, datetime, time, timedelta
@@ -23,12 +26,14 @@ except Exception:                                             # fx Windows uden 
     TZ = datetime.now().astimezone().tzinfo
 
 PORT = int(os.environ.get("PORT", 5211))
-app = create_app(__name__, "Letbane-rejseassistent")
+app = create_app(__name__, "Hovedstadens Letbane")
 
 DELAY_LIMIT_MIN = 2                  # BR-2 (antagelse A-2)
 FIRST, LAST = time(5, 0), time(23, 55)
 PEAK = (time(6, 0), time(19, 0))     # hvert 5. minut i dagtimerne, ellers hvert 10.
 BOOL_FIELDS = {"er_skiftestation", "har_elevator", "cykelparkering", "stor_tekst", "notifikationer_til"}
+PRIS_PR_ZONE_KR = 12                 # fiktiv takst: voksen 12 kr. pr. zone, mindst 2 zoner – barn halv pris
+POINT_PR_REJSE = 10
 
 
 # ---------------------------------------------------------------- Tid (BR-6: ISO 8601 med tidszone)
@@ -403,7 +408,11 @@ def mine_data(bruger_id):
     return jsonify(bruger=as_json(b),
                    favoritter=query_all("SELECT * FROM favoritrejse WHERE bruger_id = ?", (bruger_id,)),
                    feedback=query_all("SELECT * FROM feedback WHERE bruger_id = ?", (bruger_id,)),
-                   formaal={"bruger_id": "Tilfældigt id, så dine favoritter og indstillinger kan huskes – uden navn eller e-mail",
+                   billetter=query_all("SELECT * FROM billet WHERE bruger_id = ?", (bruger_id,)),
+                   point=point_status(bruger_id)["point"],
+                   formaal={"billetter": "Dine købte billetter, så de kan vises ved billetkontrol",
+                            "point": "Point for dine rejser, så du kan indløse belønninger",
+                            "bruger_id": "Tilfældigt id, så dine favoritter og indstillinger kan huskes – uden navn eller e-mail",
                             "favoritter": "Viser status på dine faste rejser og giver besked ved forstyrrelser",
                             "feedback": "Bruges anonymt til at forbedre letbanen"})
 
@@ -482,6 +491,193 @@ def notifikationer(bruger_id):
                            "titel_en": m["titel_en"], "favorit_id": f["favorit_id"], "favorit_navn": f["navn"],
                            "alternativ_rejse": m["alternativ_rejse"]})
     return jsonify(result)
+
+
+# ---------------------------------------------------------------- Live tracker: hvor er letbanetogene lige nu?
+@app.get("/api/live")
+def live():
+    """Positionen for alle letbanetog i drift lige nu, beregnet mellem forrige og næste stop ud fra forventet ankomst."""
+    ensure_today()
+    now = cph_now()
+    rows = query_all("""SELECT st.afgang_id, st.station_id, st.forventet_ankomst, st.forsinkelse_min, a.rute_id, a.koeretoej_id,
+                               r.retning, e.navn AS mod, s.navn, s.latitude, s.longitude
+                        FROM stoptid st JOIN afgang a ON a.afgang_id = st.afgang_id JOIN rute r ON r.rute_id = a.rute_id
+                        JOIN station e ON e.station_id = r.slut_station_id JOIN station s ON s.station_id = st.station_id
+                        WHERE a.planlagt_afgang BETWEEN ? AND ? ORDER BY st.afgang_id, st.raekkefoelge""",
+                     (iso(now - timedelta(minutes=80)), iso(now)))
+    vehicles = []
+    for prev, nxt in zip(rows, rows[1:]):
+        if prev["afgang_id"] != nxt["afgang_id"] or not prev["forventet_ankomst"] or not nxt["forventet_ankomst"]:
+            continue                                         # aflyste stop har ingen forventet tid
+        start, end = parse(prev["forventet_ankomst"]), parse(nxt["forventet_ankomst"])
+        if not start <= now < end:
+            continue
+        part = (now - start) / (end - start)
+        vehicles.append({"afgang_id": nxt["afgang_id"], "koeretoej_id": nxt["koeretoej_id"], "rute_id": nxt["rute_id"],
+                         "retning": nxt["retning"], "mod": nxt["mod"],
+                         "latitude": round(prev["latitude"] + (nxt["latitude"] - prev["latitude"]) * part, 6),
+                         "longitude": round(prev["longitude"] + (nxt["longitude"] - prev["longitude"]) * part, 6),
+                         "forrige_station_id": prev["station_id"], "naeste_station_id": nxt["station_id"],
+                         "naeste_station_navn": nxt["navn"], "forventet_ankomst": nxt["forventet_ankomst"],
+                         "forsinkelse_min": nxt["forsinkelse_min"],
+                         "status": "FORSINKET" if nxt["forsinkelse_min"] >= DELAY_LIMIT_MIN else "I_DRIFT"})
+    return jsonify(opdateret_tid=iso(now), koeretoejer=vehicles)
+
+
+# ---------------------------------------------------------------- Billetkøb i appen (betalingen er simuleret)
+def ticket_price(fra, til):
+    """Zoner og pris ud fra antal stop: 2 zoner for de første 3 stop, derefter én zone pr. 3 stop."""
+    stops = len(stations_between(fra, til)) - 1
+    if fra == til or stops < 1:
+        raise ApiError("Vælg to forskellige stationer på letbanen")
+    zoner = 1 + math.ceil(stops / 3)
+    return {"zoner": zoner, "gyldighed_min": 60 + 15 * zoner,
+            "priser": {"VOKSEN": zoner * PRIS_PR_ZONE_KR, "BARN": zoner * PRIS_PR_ZONE_KR // 2}}
+
+
+TICKET_SQL = """SELECT b.*, f.navn AS fra_navn, t.navn AS til_navn FROM billet b
+                JOIN station f ON f.station_id = b.fra_station_id JOIN station t ON t.station_id = b.til_station_id"""
+
+
+def ticket_json(b):
+    b["status"] = "BRUGT" if b["brugt_tid"] else "UDLOEBET" if parse(b["gyldig_til"]) < cph_now() else "GYLDIG"
+    return b
+
+
+@app.get("/api/billetpris")
+def billetpris():
+    """Zoner, gyldighed og pris pr. billettype for en rejse. ?fra=&til="""
+    return jsonify(ticket_price((request.args.get("fra") or "").upper(), (request.args.get("til") or "").upper()))
+
+
+@app.post("/api/billetter")
+def koeb_billet():
+    """Køb billet til en planlagt rejse. Betales med kort, MobilePay, rejsekredit eller en gratis billet fra belønningerne."""
+    data = json_body()
+    require(data, "bruger_id", "fra_station_id", "til_station_id")
+    bruger = get_bruger(data["bruger_id"])
+    fra, til = data["fra_station_id"].upper(), data["til_station_id"].upper()
+    price = ticket_price(fra, til)
+    billettype, antal, metode = data.get("billettype", "VOKSEN"), data.get("antal", 1), data.get("betalingsmetode", "KORT")
+    if billettype not in price["priser"]:
+        raise ApiError("Billettypen skal være VOKSEN eller BARN")
+    if isinstance(antal, bool) or not isinstance(antal, int) or not 1 <= antal <= 9:
+        raise ApiError("Antal skal være 1–9")
+    if metode not in ("KORT", "MOBILEPAY", "REJSEKREDIT", "GRATIS_BILLET"):
+        raise ApiError("Ukendt betalingsmetode")
+    pris = price["priser"][billettype] * antal
+    if metode == "GRATIS_BILLET":
+        if bruger["gratis_billetter"] < 1:
+            raise ApiError("Du har ingen gratis billetter. Indløs en under Belønninger", 409)
+        if antal != 1:
+            raise ApiError("En gratis billet gælder for én person")
+        pris = 0
+    if metode == "REJSEKREDIT" and bruger["rejsekredit_kr"] < pris:
+        raise ApiError(f"Du har kun {bruger['rejsekredit_kr']} kr. i rejsekredit – billetten koster {pris} kr.", 409)
+    now = cph_now()
+    billet_id = f"BL-{uuid.uuid4().hex[:8]}"
+    with transaction() as db:
+        db.execute("""INSERT INTO billet (billet_id, bruger_id, fra_station_id, til_station_id, afgang_id, billettype, antal, zoner,
+                                          pris_kr, betalingsmetode, kontrolkode, koebt_tid, gyldig_til)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (billet_id, bruger["bruger_id"], fra, til, data.get("afgang_id"), billettype, antal, price["zoner"], pris,
+                    metode, secrets.token_hex(3).upper(), iso(now), iso(now + timedelta(minutes=price["gyldighed_min"]))))
+        if metode == "GRATIS_BILLET":
+            db.execute("UPDATE bruger SET gratis_billetter = gratis_billetter - 1 WHERE bruger_id = ?", (bruger["bruger_id"],))
+        if metode == "REJSEKREDIT":
+            db.execute("UPDATE bruger SET rejsekredit_kr = rejsekredit_kr - ? WHERE bruger_id = ?", (pris, bruger["bruger_id"]))
+    return jsonify(ticket_json(query_one(TICKET_SQL + " WHERE b.billet_id = ?", (billet_id,)))), 201
+
+
+@app.get("/api/brugere/<bruger_id>/billetter")
+def billetter(bruger_id):
+    """Brugerens billetter – nyeste først. status er GYLDIG, BRUGT eller UDLOEBET."""
+    get_bruger(bruger_id)
+    return jsonify([ticket_json(b) for b in query_all(TICKET_SQL + " WHERE b.bruger_id = ? ORDER BY b.koebt_tid DESC", (bruger_id,))])
+
+
+@app.post("/api/billetter/<billet_id>/afslut")
+def afslut_rejse(billet_id):
+    """Afslut rejsen på en gyldig billet. Billetten bliver brugt, og brugeren optjener 10 point."""
+    billet = query_one(TICKET_SQL + " WHERE b.billet_id = ?", (billet_id,))
+    if billet is None:
+        raise ApiError(f"Billetten {billet_id} findes ikke", 404)
+    if ticket_json(billet)["status"] != "GYLDIG":
+        raise ApiError("Billetten er allerede brugt eller udløbet", 409)
+    before = point_status(billet["bruger_id"])["point"]
+    with transaction() as db:
+        db.execute("UPDATE billet SET brugt_tid = ? WHERE billet_id = ?", (iso(cph_now()), billet_id))
+        db.execute("INSERT INTO point_transaktion (transaktion_id, bruger_id, point, type, billet_id, tidspunkt) VALUES (?, ?, ?, 'REJSE', ?, ?)",
+                   (f"PT-{uuid.uuid4().hex[:8]}", billet["bruger_id"], POINT_PR_REJSE, billet_id, iso(cph_now())))
+    status = point_status(billet["bruger_id"])
+    unlocked = query_one("SELECT * FROM beloenning WHERE pris_point > ? AND pris_point <= ? ORDER BY pris_point DESC",
+                         (before, status["point"]))
+    return jsonify(billet=ticket_json(query_one(TICKET_SQL + " WHERE b.billet_id = ?", (billet_id,))),
+                   optjent_point=POINT_PR_REJSE, besked_da=f"+{POINT_PR_REJSE} point – godt gået!",
+                   besked_en=f"+{POINT_PR_REJSE} points – well done!", ny_beloenning=unlocked, point=status)
+
+
+# ---------------------------------------------------------------- Point og belønninger
+def point_status(bruger_id):
+    """Saldo og fremskridt mod næste belønning (den billigste, brugeren endnu ikke har point nok til)."""
+    bruger = get_bruger(bruger_id)
+    totals = query_one("""SELECT COALESCE(SUM(point), 0) AS point, COALESCE(SUM(CASE WHEN point > 0 THEN point END), 0) AS optjent,
+                                 COALESCE(SUM(type = 'REJSE'), 0) AS rejser FROM point_transaktion WHERE bruger_id = ?""", (bruger_id,))
+    rewards = query_all("SELECT * FROM beloenning ORDER BY pris_point")
+    upcoming = next((r for r in rewards if r["pris_point"] > totals["point"]), None)
+    return {"bruger_id": bruger_id, "point": totals["point"], "optjent_i_alt": totals["optjent"], "antal_rejser": totals["rejser"],
+            "point_pr_rejse": POINT_PR_REJSE, "naeste_beloenning": upcoming,
+            "mangler_point": upcoming["pris_point"] - totals["point"] if upcoming else 0,
+            "fremskridt_pct": min(100, round(100 * totals["point"] / upcoming["pris_point"])) if upcoming else 100,
+            "kan_indloeses": [r["beloenning_id"] for r in rewards if r["pris_point"] <= totals["point"]],
+            "rejsekredit_kr": bruger["rejsekredit_kr"], "gratis_billetter": bruger["gratis_billetter"]}
+
+
+@app.get("/api/beloenninger")
+def beloenninger():
+    """De belønninger, point kan bruges på – billigste først."""
+    return jsonify(query_all("SELECT * FROM beloenning ORDER BY pris_point"))
+
+
+@app.get("/api/brugere/<bruger_id>/point")
+def point(bruger_id):
+    """Brugerens point, fremskridt mod næste belønning, indløste belønninger og de seneste 20 bevægelser."""
+    return jsonify(**point_status(bruger_id),
+                   indloesninger=query_all("""SELECT i.*, b.type, b.navn_da, b.navn_en FROM indloesning i
+                                              JOIN beloenning b ON b.beloenning_id = i.beloenning_id
+                                              WHERE i.bruger_id = ? ORDER BY i.tidspunkt DESC""", (bruger_id,)),
+                   historik=query_all("""SELECT p.transaktion_id, p.point, p.type, p.tidspunkt, f.navn AS fra_navn, t.navn AS til_navn,
+                                                b.navn_da, b.navn_en
+                                         FROM point_transaktion p LEFT JOIN billet bl ON bl.billet_id = p.billet_id
+                                         LEFT JOIN station f ON f.station_id = bl.fra_station_id
+                                         LEFT JOIN station t ON t.station_id = bl.til_station_id
+                                         LEFT JOIN indloesning i ON i.indloesning_id = p.indloesning_id
+                                         LEFT JOIN beloenning b ON b.beloenning_id = i.beloenning_id
+                                         WHERE p.bruger_id = ? ORDER BY p.tidspunkt DESC LIMIT 20""", (bruger_id,)))
+
+
+@app.post("/api/brugere/<bruger_id>/indloesninger")
+def indloes(bruger_id):
+    """Brug point på en belønning: gratis billet, rejsekredit eller en større belønning med kode."""
+    status = point_status(bruger_id)
+    reward = query_one("SELECT * FROM beloenning WHERE beloenning_id = ?", (json_body().get("beloenning_id"),))
+    if reward is None:
+        raise ApiError("Belønningen findes ikke", 404)
+    if status["point"] < reward["pris_point"]:
+        raise ApiError(f"Du mangler {reward['pris_point'] - status['point']} point til denne belønning", 409)
+    indloesning_id = f"IL-{uuid.uuid4().hex[:8]}"
+    with transaction() as db:
+        db.execute("INSERT INTO indloesning (indloesning_id, bruger_id, beloenning_id, kode, tidspunkt) VALUES (?, ?, ?, ?, ?)",
+                   (indloesning_id, bruger_id, reward["beloenning_id"],
+                    f"HL-{secrets.token_hex(3).upper()}" if reward["type"] == "STOR" else None, iso(cph_now())))
+        db.execute("INSERT INTO point_transaktion (transaktion_id, bruger_id, point, type, indloesning_id, tidspunkt) VALUES (?, ?, ?, 'INDLOESNING', ?, ?)",
+                   (f"PT-{uuid.uuid4().hex[:8]}", bruger_id, -reward["pris_point"], indloesning_id, iso(cph_now())))
+        if reward["type"] == "GRATIS_BILLET":
+            db.execute("UPDATE bruger SET gratis_billetter = gratis_billetter + 1 WHERE bruger_id = ?", (bruger_id,))
+        if reward["type"] == "REJSEKREDIT":
+            db.execute("UPDATE bruger SET rejsekredit_kr = rejsekredit_kr + ? WHERE bruger_id = ?", (reward["vaerdi_kr"], bruger_id))
+    return jsonify(indloesning=query_one("SELECT * FROM indloesning WHERE indloesning_id = ?", (indloesning_id,)),
+                   beloenning=reward, point=point_status(bruger_id)), 201
 
 
 # ---------------------------------------------------------------- F-10: feedback og feedbackrapport (BE-7, BE-8)

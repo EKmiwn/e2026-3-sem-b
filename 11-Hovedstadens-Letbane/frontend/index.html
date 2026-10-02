@@ -3,10 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Letbanen – rejseassistent</title>
+  <title>Hovedstadens Letbane</title>
   <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="style.css">
-  <style>:root { --brand: #1f3b5c; --brand-dark: #122740; --brand-soft: #e6eef7; }</style>
+  <!-- Grønt tema som Hovedstadens Letbane -->
+  <style>:root { --brand: #00843d; --brand-dark: #005c2b; --brand-soft: #e2f3e9; }</style>
   <style>
     button { min-height: 44px; }                                   /* U-4: knapper ≥ 44 × 44 px */
     button.small { min-height: 32px; }
@@ -26,16 +28,53 @@
     .updated { font-size: 0.85rem; color: var(--muted); }
     .icons span { margin-right: 10px; }
     .notice { background: #fde4e4; color: #7d1010; border-radius: var(--radius); padding: 12px 14px; margin-bottom: 12px; font-weight: 600; }
-    fieldset.stations label { min-width: 150px; }
+
+    /* Forside: rejseplanlægger øverst som hos DSB og Rejseplanen */
+    .hero { background: var(--brand); color: #fff; border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+    .hero h2 { margin: 0 0 12px; font-size: 1.5rem; }
+    .planner { background: var(--surface); border-radius: var(--radius); padding: 14px; }
+    .planner .fields { display: grid; gap: 10px; grid-template-columns: 1fr auto 1fr; align-items: end; }
+    .planner button.swap { background: var(--surface); color: var(--brand-dark); border-color: var(--border); font-size: 1.2rem; }
+    .planner button.go { font-size: 1.1rem; }
+    @media (max-width: 600px) { .planner .fields { grid-template-columns: 1fr; } }
+    .points-chip { background: #fff; color: var(--brand-dark); border-color: #fff; }
+    .points-chip:hover { background: var(--brand-soft); }
+
+    /* Kort. z-index 0 holder kortets lag under beskeden i toppen */
+    .map { height: 340px; border-radius: 8px; position: relative; z-index: 0; background: var(--brand-soft); }
+    .map.tall { height: 460px; }
+    .tram { display: grid; place-items: center; font-size: 17px; border-radius: 50%; background: #fff; border: 3px solid var(--brand);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); transition: transform 5s linear; }
+    .tram.NORD { border-color: var(--brand-dark); }
+    .tram.follow { border-color: #f2c230; box-shadow: 0 0 0 6px rgba(242, 194, 48, 0.45); z-index: 1000 !important; }
+    .leaflet-zoom-anim .tram { transition: none; }
+
+    /* Point og belønninger */
+    .points { display: grid; gap: 8px; }
+    .points .total { font-size: 2rem; font-weight: 800; color: var(--brand-dark); line-height: 1.1; }
+    .progress { height: 16px; background: var(--border); border-radius: 999px; overflow: hidden; }
+    .progress span { display: block; height: 100%; background: var(--brand); border-radius: 999px; transition: width 0.6s; }
+    .celebrate { background: var(--brand-soft); border: 2px solid var(--brand); border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+                 font-size: 1.4rem; font-weight: 800; color: var(--brand-dark); text-align: center; }
+    .celebrate small { display: block; font-size: 0.95rem; font-weight: 600; }
+    .reward .cost { font-size: 1.3rem; font-weight: 800; color: var(--brand-dark); }
+
+    /* Billetter */
+    .ticket { border: 2px dashed var(--brand); }
+    .ticket.BRUGT, .ticket.UDLOEBET { border-color: var(--border); opacity: 0.75; }
+    .ticket .code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.5rem; font-weight: 700; letter-spacing: 0.2em; }
+    .ticket .barcode { height: 40px; margin: 6px 0; background: repeating-linear-gradient(90deg, #111 0 2px, #fff 2px 5px, #111 5px 6px, #fff 6px 10px, #111 10px 13px, #fff 13px 15px); }
+    .total-price { font-size: 1.4rem; font-weight: 800; }
   </style>
 </head>
 <body data-api-port="5211">
   <header>
     <div>
-      <h1>🚊 Letbanen</h1>
+      <h1>🚊 Hovedstadens Letbane</h1>
       <p data-t="tagline">Til tiden, tydelig information og nemme skift</p>
     </div>
     <div class="actions">
+      <button class="small points-chip" id="points-chip">⭐ –</button>
       <button class="small secondary" id="lang-button">English</button>
       <button class="small secondary" id="size-button">A+</button>
     </div>
@@ -45,15 +84,50 @@
     <button class="active" data-tab="home" data-t="tabHome">Forside</button>
     <button data-tab="board" data-t="tabBoard">Afgange</button>
     <button data-tab="trip" data-t="tabTrip">Rejse</button>
+    <button data-tab="tickets" data-t="tabTickets">Billetter</button>
+    <button data-tab="live" data-t="tabLive">Live</button>
+    <button data-tab="rewards" data-t="tabRewards">Belønninger</button>
     <button data-tab="feedback" data-t="tabFeedback">Feedback</button>
     <button data-tab="settings" data-t="tabSettings">Indstillinger</button>
-    <button data-tab="staff" data-t="tabStaff">Personale</button>
   </nav>
 
   <main>
-    <!-- Forside: notifikationer, favoritrejser og driftsmeddelelser (F-5, F-8, F-9) -->
+    <!-- Forside: rejseplanlægger, point, kort, billetter, favoritrejser og driftsmeddelelser -->
     <section class="tab active" id="tab-home">
+      <div class="hero">
+        <h2 data-t="whereTo">Hvor skal du hen?</h2>
+        <form id="home-trip-form" class="planner">
+          <div class="fields">
+            <label><span data-t="from">Fra</span> <select name="fra" required></select></label>
+            <button type="button" class="swap" id="swap-button" title="Byt om" aria-label="Byt om på fra og til">⇄</button>
+            <label><span data-t="to">Til</span> <select name="til" required></select></label>
+          </div>
+          <label><span data-t="time">Afgang efter</span> <input type="time" name="tid"></label>
+          <button class="go" data-t="search">Find rejse</button>
+        </form>
+      </div>
+
       <div id="notices"></div>
+      <div class="card" id="home-points"></div>
+
+      <h2 data-t="mapTitle">Kort</h2>
+      <div class="grid wide">
+        <div class="card">
+          <h3 data-t="mapStandard">Standardkort</h3>
+          <div id="map-standard" class="map"></div>
+        </div>
+        <div class="card">
+          <h3 data-t="mapSatellite">Satellitkort</h3>
+          <div id="map-satellite" class="map"></div>
+        </div>
+      </div>
+      <div class="toolbar">
+        <button class="small secondary" id="locate-button" data-t="myLocation">📍 Min placering</button>
+        <button class="small secondary" id="fit-button" data-t="wholeLine">Vis hele linjen</button>
+        <span class="updated" id="location-note"></span>
+      </div>
+
+      <div id="home-tickets"></div>
       <h2 data-t="myTrips">Mine rejser</h2>
       <div class="grid" id="favorites"></div>
       <h2 data-t="operations">Driftsinformation</h2>
@@ -77,7 +151,7 @@
       </div>
     </section>
 
-    <!-- Rejsesøgning (F-4, F-6, F-7, F-8) -->
+    <!-- Rejsesøgning og billetkøb (F-4, F-6, F-7, F-8) -->
     <section class="tab" id="tab-trip">
       <div class="card">
         <form id="trip-form">
@@ -90,6 +164,46 @@
         </form>
       </div>
       <div id="trip-result"></div>
+      <div id="purchase"></div>
+    </section>
+
+    <!-- Billetter -->
+    <section class="tab" id="tab-tickets">
+      <div id="ticket-banner"></div>
+      <h2 data-t="myTickets">Mine billetter</h2>
+      <div class="grid" id="tickets"></div>
+    </section>
+
+    <!-- Live tracker -->
+    <section class="tab" id="tab-live">
+      <div class="card">
+        <div class="toolbar">
+          <h2 style="flex:1;margin:0" data-t="liveTitle">Følg letbanen live</h2>
+          <span class="updated" id="live-updated"></span>
+        </div>
+        <div id="map-live" class="map tall"></div>
+      </div>
+      <div class="card">
+        <h3 data-t="liveList">Letbanetog i drift lige nu</h3>
+        <div id="live-list"></div>
+      </div>
+    </section>
+
+    <!-- Point og belønninger -->
+    <section class="tab" id="tab-rewards">
+      <div class="card" id="rewards-points"></div>
+      <h2 data-t="rewardsTitle">Brug dine point</h2>
+      <div class="grid" id="rewards"></div>
+      <div class="grid wide">
+        <div class="card">
+          <h3 data-t="redeemed">Dine indløste belønninger</h3>
+          <div id="redemptions"></div>
+        </div>
+        <div class="card">
+          <h3 data-t="pointHistory">Seneste point</h3>
+          <div id="point-history"></div>
+        </div>
+      </div>
     </section>
 
     <!-- Feedback (F-10) -->
@@ -133,39 +247,6 @@
       </div>
     </section>
 
-    <!-- Personale: driftsmeddelelser og feedbackrapport (F-11, S-2, BE-8) -->
-    <section class="tab" id="tab-staff">
-      <div class="card">
-        <label>Personale-id <select id="staff-select"></select></label>
-        <div class="kpis" id="status-kpis" style="margin-top:12px"></div>
-      </div>
-      <div class="grid wide">
-        <div class="card">
-          <h2>Ny driftsmeddelelse</h2>
-          <form id="message-form">
-            <div class="row">
-              <label>Type <select name="type"><option>AFLYSNING</option><option>FORSINKELSE</option><option>SPORARBEJDE</option><option>TEKNISK_FEJL</option><option>ANDET</option></select></label>
-              <label>Alvorlighed <select name="alvorlighed"><option>KRITISK</option><option>ADVARSEL</option><option>INFO</option></select></label>
-              <label>Varighed (min) <input type="number" name="minutter" value="60" min="5"></label>
-            </div>
-            <label>Titel (dansk) <input name="titel_da" maxlength="80" required></label>
-            <label>Tekst i klart sprog (dansk) <textarea name="tekst_da" maxlength="500" required></textarea></label>
-            <label>Title (English) <input name="titel_en" maxlength="80"></label>
-            <label>Text (English) <textarea name="tekst_en" maxlength="500"></textarea></label>
-            <label>Alternativ rejse <input name="alternativ_rejse" maxlength="300" placeholder="fx Tag bus 400S"></label>
-            <fieldset class="stations"><legend>Berørte stationer</legend><div id="station-checks"></div></fieldset>
-            <button>Udsend</button>
-          </form>
-        </div>
-        <div class="card">
-          <h2>Aktive meddelelser</h2>
-          <div id="staff-messages"></div>
-          <h2 style="margin-top:16px">Feedbackrapport (7 dage)</h2>
-          <div id="feedback-report"></div>
-        </div>
-      </div>
-    </section>
-
     <details class="card">
       <summary>Seneste JSON-svar fra API'et</summary>
       <pre id="last-response" class="json">Ingen kald endnu</pre>
@@ -173,6 +254,7 @@
   </main>
 
   <div id="toast" class="toast"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="api.js"></script>
   <script src="app.js"></script>
 </body>

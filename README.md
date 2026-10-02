@@ -7,7 +7,7 @@ Hver gruppemappe indeholder en prototype bygget ud fra gruppens kravspecifikatio
 
 | # | Projekt | Prototype | Lokal port | Dokumentation |
 |---|---|---|---|---|
-| 1 | Movia | Den Forudsigelige Rejse: roligste afgang ud fra støj/trængsel, digitalt solsikkesignal, visuel tidslinje og rolig zone | 5201 | [DOCS](1-Movia/DOCS.md) · [API](1-Movia/backend/README.md) |
+| 1 | Movia | Den Forudsigelige Rejse: roligste afgang ud fra støj/trængsel, rejseguide med stemme, digitalt solsikkesignal, visuel tidslinje og rolig zone | 5201 | [DOCS](1-Movia/DOCS.md) · [API](1-Movia/backend/README.md) |
 | 2 | NORMAL | Søg produkt → vælg butik → lagerstatus og andre butikker med varen | 5202 | [DOCS](2-NORMAL/DOCS.md) · [API](2-NORMAL/backend/README.md) |
 | 3 | COOP | Grønne Besparelser: gule mærker live fra egen SuperBrugsen, oprettet på håndterminalen | 5203 | [DOCS](3-COOP/DOCS.md) · [API](3-COOP/backend/README.md) |
 | 4 | Habitus | Tale-til-tekst: optag, kategorisér, godkend (medicin altid) og overfør til Sofus/Outlook | 5204 | [DOCS](4-Habitus/DOCS.md) · [API](4-Habitus/backend/README.md) |
@@ -16,7 +16,7 @@ Hver gruppemappe indeholder en prototype bygget ud fra gruppens kravspecifikatio
 | 8 | Clever | Ladeapp: realtidsstatus, pris før start, live opladning, grøn status, fejlrapport og ruteplan | 5208 | [DOCS](8-Clever/DOCS.md) · [API](8-Clever/backend/README.md) |
 | 9 | GreenMobility FAMILY | Familieabonnement, booking, GreenCredits og forecast til flådeplacering | 5209 | [DOCS](9-GreenMobility-FAMILY/DOCS.md) · [API](9-GreenMobility-FAMILY/backend/README.md) |
 | 10 | Elevevaluering | Læringsrum 2.0: elever vurderer trivsel og møbler, lærere ser resultater og udvikling over tid | 5210 | [DOCS](10-Elevevaluering/DOCS.md) · [API](10-Elevevaluering/backend/README.md) |
-| 11 | Hovedstadens Letbane | Rejseassistent: afgangstavle, rejsesøgning, driftsmeddelelser, favoritter og feedback | 5211 | [DOCS](11-Hovedstadens-Letbane/DOCS.md) · [API](11-Hovedstadens-Letbane/backend/README.md) |
+| 11 | Hovedstadens Letbane | Passagerapp: rejseplanlægger og kort, afgangstavle, billetkøb, live-sporing, point og belønninger, driftsmeddelelser og favoritter | 5211 | [DOCS](11-Hovedstadens-Letbane/DOCS.md) · [API](11-Hovedstadens-Letbane/backend/README.md) |
 | 12 | Bispebjerg Akutmodtagelse | Digital registrering: symptomer før/ved ankomst, registreringsnummer, patientstatus, triage og undersøgelser sendt til afdelinger (dansk/engelsk) | 5212 | [DOCS](12-Bispebjerg-Akut/DOCS.md) · [API](12-Bispebjerg-Akut/backend/README.md) |
 
 - **`DOCS.md`** beskriver prototypen: krav, forretningsregler, ER-diagram og testdata.
@@ -46,7 +46,7 @@ Alle prototyper er bygget ens, og strukturen er den samme:
 Hovedstadens Letbane bruger string-id'er fra gruppens data dictionary (fx `"HER"` og `"L-SYD"`) og har derfor egne endepunkter i stedet for `register_crud()`. `core.py` og `database.py` er stadig de fælles filer.
 
 Flask serverer frontenden på `/` og API'et på `/api/...` fra samme adresse.
-Prototyper med roller (Habitus, &LIVING, Click, Clever, Elevevaluering, Letbanens personale og Bispebjergs personale) bruger et simuleret login, hvor den valgte bruger sendes i en header (`X-User-Id` eller `X-Personale-Id`).
+Prototyper med roller (Habitus, &LIVING, Click, Clever, Elevevaluering, Bispebjergs personale og Letbanens personale-API) bruger et simuleret login, hvor den valgte bruger sendes i en header (`X-User-Id` eller `X-Personale-Id`).
 
 ## Kør lokalt
 

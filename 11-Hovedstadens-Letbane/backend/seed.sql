@@ -95,3 +95,19 @@ INSERT INTO feedback (feedback_id, bruger_id, afgang_id, vurdering, kategori, ko
   ('FB-0003', NULL, NULL, 1, 'INFORMATION', 'Ingen besked om aflysningen på perronen', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 days')),
   ('FB-0004', NULL, NULL, 5, 'PLADS', 'God plads til min cykel', strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-1 days')),
   ('FB-0005', NULL, NULL, 3, 'INFORMATION', NULL, strftime('%Y-%m-%dT%H:%M:%SZ', 'now', '-5 hours'));
+
+INSERT INTO beloenning (beloenning_id, type, navn_da, navn_en, beskrivelse_da, beskrivelse_en, pris_point, vaerdi_kr) VALUES
+  ('B-250', 'GRATIS_BILLET', 'Gratis billet', 'Free ticket', 'Én gratis billet til en valgfri rejse med letbanen.',
+   'One free ticket for any journey on the light rail.', 250, 0),
+  ('B-500', 'REJSEKREDIT', 'Rejsekredit på 50 kr.', 'Travel credit of DKK 50', '50 kr. sættes ind som rejsekredit, du kan betale billetter med.',
+   'DKK 50 is added as travel credit that you can pay for tickets with.', 500, 50),
+  ('B-1000', 'STOR', 'Gratis rejser i en uge', 'One week of free travel', 'Rejs frit med letbanen i 7 dage. Du får en kode, som vises ved billetkontrol.',
+   'Travel freely on the light rail for 7 days. You get a code to show at ticket inspection.', 1000, 0);
+
+-- Demo-brugeren har 24 tidligere rejser = 240 point, så næste rejse udløser den første belønning
+INSERT INTO point_transaktion (transaktion_id, bruger_id, point, type, tidspunkt)
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 24)
+SELECT printf('PT-seed%03d', i), '3f6c2a1e-demo-4b8e-9d11-joan00000001', 10, 'REJSE',
+       strftime('%Y-%m-%dT07:10:00Z', 'now', '-' || i || ' days')
+FROM n;
+
